@@ -8,20 +8,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install system dependencies
+      - name: Install system deps
         run: |
           sudo apt update
-          sudo apt install -y git perl fakeroot rsync build-essential curl unzip xz-utils libxml2-dev bzip2
+          sudo apt install -y git perl fakeroot rsync build-essential curl bzip2 libxml2-dev
 
-      - name: Clone Theos
+      - name: Run official Theos installer
         run: |
-          git clone --recursive https://github.com/theos/theos.git ~/theos
+          bash -c "$(curl -fsSL https://raw.githubusercontent.com/theos/theos/master/bin/install-theos)"
           echo "THEOS=$HOME/theos" >> $GITHUB_ENV
-
-      - name: Fetch toolchain + sdks via install.sh
-        run: |
-          cd $HOME/theos
-          ./install.sh
 
       - name: Build rootless deb
         run: |
