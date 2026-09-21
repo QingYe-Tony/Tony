@@ -1,0 +1,8 @@
+Package: com.qingye.floaturl
+Name: FloatURL
+Version: 0.0.1
+Architecture: iphoneos-arm64
+Maintainer: QingYe
+Description: 全局悬浮球快捷打开链接
+Depends: mobilesubstrate
+Rootless: true
