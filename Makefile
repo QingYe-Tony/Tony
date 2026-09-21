@@ -8,7 +8,6 @@ INSTALL_TARGET_PROCESSES = SpringBoard
 include $(THEOS)/makefiles/common.mk
 
 TWEAK_NAME = FloatLink
-
 FloatLink_FILES = Tweak.x
 FloatLink_CFLAGS = -fobjc-arc
 
