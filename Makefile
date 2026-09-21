@@ -1,7 +1,6 @@
 ARCHS = arm64 arm64e
 TARGET = iphone:clang:16.5:15.0
-THEOS_PACKAGE_SCHEME = rootless
-# 关闭废弃声明警告，不让警告变成error
+THEOS_PACKAGE_SCHEME = roothide
 CFLAGS += -Wno-deprecated-declarations
 
 INSTALL_TARGET_PROCESSES = SpringBoard
