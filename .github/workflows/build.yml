@@ -8,15 +8,23 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install required system deps
+      - name: Install system dependencies
         run: |
           sudo apt update
-          sudo apt install -y perl fakeroot rsync build-essential git
+          sudo apt install -y perl fakeroot rsync build-essential git unzip curl
 
-      - name: Clone full Theos (--recursive 拉取子模块，包含 dm.pl)
+      - name: Clone Theos recursive
         run: |
           git clone --recursive https://github.com/theos/theos.git ~/theos
           echo "THEOS=$HOME/theos" >> $GITHUB_ENV
+
+      - name: Download iOS SDK 15.0
+        run: |
+          mkdir -p $HOME/theos/sdks
+          cd $HOME/theos/sdks
+          curl -L -o iPhoneOS15.0.sdk.tar.xz https://github.com/theos/sdks/raw/master/iPhoneOS15.0.sdk.tar.xz
+          tar -xf iPhoneOS15.0.sdk.tar.xz
+          rm iPhoneOS15.0.sdk.tar.xz
 
       - name: Build & package tweak
         run: make package
