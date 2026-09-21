@@ -8,31 +8,26 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install system dependencies
+      - name: Install deps
         run: |
           sudo apt update
-          sudo apt install -y git perl fakeroot rsync build-essential curl unzip xz-utils libxml2-dev
+          sudo apt install -y git perl fakeroot rsync build-essential xz-utils libxml2-dev
 
-      - name: Clone Theos recursive
+      - name: Clone Theos
         run: |
           git clone --recursive https://github.com/theos/theos.git ~/theos
           echo "THEOS=$HOME/theos" >> $GITHUB_ENV
 
-      - name: Download full sdks repo
+      - name: Git clone sdks repo (proper structure)
         run: |
-          mkdir -p $THEOS/sdks
-          cd $THEOS/sdks
-          curl -L -o sdks.zip https://github.com/theos/sdks/archive/refs/heads/master.zip
-          unzip -q sdks.zip
-          mv sdks-master/* .
-          rm -rf sdks.zip sdks-master
+          git clone https://github.com/theos/sdks.git $HOME/theos/sdks
 
-      - name: Build rootless package
+      - name: Build rootless deb
         run: |
           export THEOS_PACKAGE_SCHEME=rootless
           make package
 
-      - name: Upload deb artifact
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           path: packages/*.deb
