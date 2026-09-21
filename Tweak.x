@@ -21,6 +21,13 @@ static void showMenu(void) {
     [root presentViewController:alert animated:YES completion:nil];
 }
 
+static void dragView(UIPanGestureRecognizer *ges){
+    UIView *v = ges.view;
+    CGPoint pt = [ges translationInView:v.superview];
+    v.center = CGPointMake(v.center.x + pt.x, v.center.y + pt.y);
+    [ges setTranslation:CGPointZero inView:v.superview];
+}
+
 %hook SpringBoard
 - (void)applicationDidFinishLaunching:(id)app {
     %orig;
@@ -37,16 +44,9 @@ static void showMenu(void) {
         g_floatBtn.backgroundColor = [[UIColor darkGrayColor] colorWithAlphaComponent:0.65];
         g_floatBtn.layer.cornerRadius = 25;
         [g_floatBtn setTitle:@"🔗" forState:UIControlStateNormal];
-        [g_floatBtn addTarget:nil action:@selector(showMenu) forControlEvents:UIControlEventTouchUpInside];
+        [g_floatBtn addTarget:self action:@selector(showMenu) forControlEvents:UIControlEventTouchUpInside];
 
-        // Block手势，不再需要单独dragView函数
-        UIPanGestureRecognizer *pan = [[UIPanGestureRecognizer alloc] initWithTarget:g_floatBtn action:@selector(panRecognized:)];
-        [pan setActionBlock:^(UIPanGestureRecognizer *ges){
-            UIView *v = ges.view;
-            CGPoint pt = [ges translationInView:v.superview];
-            v.center = CGPointMake(v.center.x + pt.x, v.center.y + pt.y);
-            [ges setTranslation:CGPointZero inView:v.superview];
-        }];
+        UIPanGestureRecognizer *pan = [[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(dragView:)];
         [g_floatBtn addGestureRecognizer:pan];
 
         [vc.view addSubview:g_floatBtn];
