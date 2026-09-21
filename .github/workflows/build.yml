@@ -11,20 +11,15 @@ jobs:
       - name: Install system dependencies
         run: |
           sudo apt update
-          sudo apt install -y perl fakeroot rsync build-essential git unzip curl
+          sudo apt install -y perl fakeroot rsync build-essential git xz-utils curl
 
       - name: Clone Theos recursive
         run: |
           git clone --recursive https://github.com/theos/theos.git ~/theos
           echo "THEOS=$HOME/theos" >> $GITHUB_ENV
 
-      - name: Download iOS SDK 15.0
-        run: |
-          mkdir -p $HOME/theos/sdks
-          cd $HOME/theos/sdks
-          curl -L -o iPhoneOS15.0.sdk.tar.xz https://github.com/theos/sdks/raw/master/iPhoneOS15.0.sdk.tar.xz
-          tar -xf iPhoneOS15.0.sdk.tar.xz
-          rm iPhoneOS15.0.sdk.tar.xz
+      - name: Install iOS SDK 15.0 (official script)
+        run: $THEOS/bin/install-sdk 15.0
 
       - name: Build & package tweak
         run: make package
