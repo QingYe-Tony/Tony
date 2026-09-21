@@ -8,15 +8,20 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Theos
+      - name: Install required system deps
         run: |
-          git clone --depth=1 https://github.com/theos/theos.git ~/theos
+          sudo apt update
+          sudo apt install -y perl fakeroot rsync build-essential git
+
+      - name: Clone full Theos (--recursive 拉取子模块，包含 dm.pl)
+        run: |
+          git clone --recursive https://github.com/theos/theos.git ~/theos
           echo "THEOS=$HOME/theos" >> $GITHUB_ENV
 
-      - name: Build Tweak
-        run: make package THEOS=$HOME/theos
+      - name: Build & package tweak
+        run: make package
 
-      - name: Upload Artifact
+      - name: Upload deb artifact
         uses: actions/upload-artifact@v4
         with:
           path: packages/*.deb
