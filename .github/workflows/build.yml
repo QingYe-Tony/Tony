@@ -5,17 +5,34 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    container: poomsmart/theos:latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Build & package
+      - name: Install system dependencies
         run: |
-          export THEOS=/theos
+          sudo apt update
+          sudo apt install -y git perl fakeroot rsync build-essential curl unzip xz-utils libxml2-dev
+
+      - name: Clone Theos recursive
+        run: |
+          git clone --recursive https://github.com/theos/theos.git ~/theos
+          echo "THEOS=$HOME/theos" >> $GITHUB_ENV
+
+      - name: Download full sdks repo
+        run: |
+          mkdir -p $THEOS/sdks
+          cd $THEOS/sdks
+          curl -L -o sdks.zip https://github.com/theos/sdks/archive/refs/heads/master.zip
+          unzip -q sdks.zip
+          mv sdks-master/* .
+          rm -rf sdks.zip sdks-master
+
+      - name: Build rootless package
+        run: |
           export THEOS_PACKAGE_SCHEME=rootless
           make package
 
-      - name: Upload deb
+      - name: Upload deb artifact
         uses: actions/upload-artifact@v4
         with:
           path: packages/*.deb
