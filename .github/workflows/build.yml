@@ -5,26 +5,17 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    container: poomsmart/theos:latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install system dependencies
+      - name: Build & package
         run: |
-          sudo apt update
-          sudo apt install -y perl fakeroot rsync build-essential git xz-utils curl
+          export THEOS=/theos
+          export THEOS_PACKAGE_SCHEME=rootless
+          make package
 
-      - name: Clone Theos recursive
-        run: |
-          git clone --recursive https://github.com/theos/theos.git ~/theos
-          echo "THEOS=$HOME/theos" >> $GITHUB_ENV
-
-      - name: Install iOS SDK 15.0 (official script)
-        run: $THEOS/bin/install-sdk 15.0
-
-      - name: Build & package tweak
-        run: make package
-
-      - name: Upload deb artifact
+      - name: Upload deb
         uses: actions/upload-artifact@v4
         with:
           path: packages/*.deb
