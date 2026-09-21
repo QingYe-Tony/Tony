@@ -7,6 +7,7 @@ include $(THEOS)/makefiles/common.mk
 TWEAK_NAME = FloatLink
 
 FloatLink_FILES = Tweak.x
-FloatLink_CFLAGS = -fobjc-arc
+# 关闭未使用函数的报错，只保留警告
+FloatLink_CFLAGS = -fobjc-arc -Wno-error=unused-function
 
 include $(THEOS_MAKE_PATH)/tweak.mk
