@@ -38,7 +38,7 @@ jobs:
         run: npm ci
 
       - name: 构建（当前平台）
-        run: npm run dist
+        run: npm run dist -- --publish never
 
       - name: 上传产物
         uses: actions/upload-artifact@v4
