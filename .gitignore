@@ -11,7 +11,7 @@ builder-debug.yml
 dist-android/
 dist-desktop/
 dist-ios/
-dist-v11/
+dist-v*/
 *.apk
 *.exe
 *.dmg
@@ -19,6 +19,10 @@ dist-v11/
 *.AppImage
 *.deb
 *.blockmap
+*.yml.blockmap
+latest*.yml
+builder-debug.yml
+*-unpacked/
 
 # Capacitor / Android
 www/
