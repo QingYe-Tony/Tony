@@ -1,5 +1,5 @@
-const CACHE = 'pos-cache-v1';
-const ASSETS = ['./', './index.html', './manifest.webmanifest', './icon.svg', './server.py'];
+const CACHE = 'pos-cache-v2';
+const ASSETS = ['./', './index.html', './manifest.webmanifest', './sw.js', './icon.svg', './icon-192.png', './icon-512.png', './icon-maskable-512.png', './apple-touch-icon.png', './server.py'];
 
 self.addEventListener('install', (e) => {
   e.waitUntil(

@@ -1,19 +1,17 @@
 {
   "name": "通用商户收银系统（跨平台版）",
   "short_name": "收银台",
-  "description": "离线可用、兼容所有系统的商户收银系统",
+  "description": "离线可用、兼容所有系统的商户收银系统（支持手机端）",
   "start_url": "index.html",
   "scope": ".",
   "display": "standalone",
-  "orientation": "any",
+  "orientation": "portrait",
   "background_color": "#f4f6f8",
   "theme_color": "#2563eb",
   "icons": [
-    {
-      "src": "icon.svg",
-      "sizes": "any",
-      "type": "image/svg+xml",
-      "purpose": "any maskable"
-    }
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" },
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
   ]
 }
