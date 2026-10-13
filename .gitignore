@@ -6,3 +6,15 @@ __pycache__/
 *.log
 .DS_Store
 builder-debug.yml
+
+# Capacitor / Android
+www/
+android/app/build/
+android/build/
+android/.gradle/
+android/local.properties
+android/.idea/
+android/app/src/main/assets/public/
+*.apk
+*.keystore
+*.jks

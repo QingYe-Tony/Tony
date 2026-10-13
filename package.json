@@ -11,7 +11,10 @@
     "dist": "electron-builder",
     "dist:mac": "electron-builder --mac",
     "dist:linux": "electron-builder --linux",
-    "dist:win": "electron-builder --win"
+    "dist:win": "electron-builder --win",
+    "web:copy": "node scripts/copy-web.js",
+    "cap:sync": "npm run web:copy && npx cap sync android",
+    "android:apk": "npm run cap:sync && cd android && ./gradlew assembleDebug"
   },
   "build": {
     "appId": "com.workbuddy.pos",
@@ -43,16 +46,25 @@
     ],
     "mac": {
       "category": "public.app-category.business",
-      "target": ["dmg", "zip"],
+      "target": [
+        "dmg",
+        "zip"
+      ],
       "identity": null,
       "hardenedRuntime": false
     },
     "win": {
-      "target": ["nsis", "portable"],
+      "target": [
+        "nsis",
+        "portable"
+      ],
       "icon": "build/icon.ico"
     },
     "linux": {
-      "target": ["AppImage", "deb"],
+      "target": [
+        "AppImage",
+        "deb"
+      ],
       "category": "Office",
       "icon": "build/icon.png",
       "maintainer": "workbuddy",
@@ -64,14 +76,19 @@
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
       "displayLanguageSelector": true,
-      "installerLanguages": ["zh_CN"],
+      "installerLanguages": [
+        "zh_CN"
+      ],
       "include": "installer.nsh"
     }
   },
   "dependencies": {
+    "@capacitor/core": "^6.2.2",
     "electron-updater": "^6.3.9"
   },
   "devDependencies": {
+    "@capacitor/android": "^6.2.2",
+    "@capacitor/cli": "^6.2.2",
     "electron": "^31.3.0",
     "electron-builder": "^24.13.3"
   }

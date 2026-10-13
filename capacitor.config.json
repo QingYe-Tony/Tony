@@ -1,0 +1,11 @@
+{
+  "appId": "com.workbuddy.pos",
+  "appName": "通用收银台",
+  "webDir": "www",
+  "server": {
+    "androidScheme": "https"
+  },
+  "android": {
+    "allowMixedContent": false
+  }
+}
