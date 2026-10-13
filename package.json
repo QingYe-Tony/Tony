@@ -1,6 +1,6 @@
 {
   "name": "merchant-pos",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "跨平台商户收银系统（桌面版，基于 Electron 打包）",
   "main": "main.js",
   "author": "WorkBuddy",

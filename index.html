@@ -142,6 +142,18 @@
   .switch-row{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600;margin:8px 0}
   .switch-row input[type=checkbox]{width:auto;transform:scale(1.15)}
 
+  /* ============ 备份中心 ============ */
+  .bk-h{font-size:14px;margin:18px 0 8px;padding-bottom:6px;border-bottom:1px solid var(--line)}
+  #dropZone{border:2px dashed var(--line);border-radius:12px;padding:20px 16px;text-align:center;
+    color:var(--muted);transition:.15s;background:#fafbfc}
+  #dropZone.over{border-color:var(--brand);background:var(--soft);color:var(--brand)}
+  .imp-card{border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-bottom:8px;font-size:13px}
+  .imp-ok{border-left:3px solid var(--ok)}
+  .imp-warn{border-left:3px solid var(--warn)}
+  .imp-err{border-left:3px solid var(--danger)}
+  .fmt-badge{display:inline-block;padding:2px 9px;border-radius:999px;background:var(--soft);
+    color:var(--brand);font-weight:700;font-size:11.5px;margin-right:6px}
+
   /* ============ 移动端（手机 App 体验）============ */
   #bottomNav{display:none}
   #mobileCartBar{display:none}
@@ -505,10 +517,13 @@ exports.main_handler = async (event) => {
         <h3>数据备份与恢复</h3>
         <p class="pill">所有数据保存在本机浏览器本地存储中。建议定期导出备份，换设备或清缓存前务必导出。</p>
         <div class="row" style="margin:10px 0">
-          <button class="ghost" onclick="exportAll()">导出全部数据 (JSON)</button>
-          <button class="ghost" onclick="document.getElementById('impAll').click()">导入备份</button>
-          <input id="impAll" type="file" accept=".json" class="hidden" onchange="importAll(this)">
+          <button class="primary" onclick="openBackup()">备份与恢复中心</button>
+          <button class="ghost" onclick="exportAll()">快速导出 JSON</button>
+          <button class="ghost" onclick="document.getElementById('impAll').click()">导入备份文件</button>
+          <input id="impAll" type="file" multiple class="hidden" onchange="quickImport(this)">
         </div>
+        <p class="cfg-help">支持 <b>JSON / Excel(xlsx) / CSV / TSV / ZIP / SQL</b> 五种格式导出；
+          导入时不挑格式（含真实 Excel 文件），拖进去自动识别。</p>
         <div class="row" style="margin:10px 0">
           <button class="ghost" onclick="loadDemo()">载入演示数据</button>
           <button class="danger" onclick="wipeData()">清空全部数据</button>
@@ -596,6 +611,43 @@ exports.main_handler = async (event) => {
     <div id="slList" style="max-height:56vh;overflow:auto"></div>
     <div class="row" style="justify-content:flex-end;margin-top:10px">
       <button class="primary" onclick="closeModal('stockLogModal')">关闭</button>
+    </div>
+  </div>
+</div>
+
+<!-- 备份与恢复中心 -->
+<div id="backupModal" class="modal-bg hidden">
+  <div class="modal" style="width:min(700px,100%)">
+    <h3>备份与恢复中心</h3>
+    <p class="pill">导出支持 JSON / Excel / CSV / ZIP / SQL；导入不挑格式，拖进去自动识别</p>
+
+    <h4 class="bk-h">一、导出</h4>
+    <div class="row" style="flex-wrap:wrap;gap:8px;margin:0">
+      <button class="primary" onclick="expXLSX()">Excel 工作簿 .xlsx</button>
+      <button class="ghost" onclick="expFullJSON()">完整备份 .json</button>
+      <button class="ghost" onclick="expFullZIP()">打包备份 .zip</button>
+      <button class="ghost" onclick="expSQL()">数据库脚本 .sql</button>
+    </div>
+    <p class="cfg-help" style="margin-top:12px">分表导出 CSV（Excel / WPS / 手机表格都能直接打开）：</p>
+    <div class="row" id="csvBtns" style="flex-wrap:wrap;gap:6px;margin:0"></div>
+
+    <h4 class="bk-h">二、导入</h4>
+    <div id="dropZone">
+      <div style="font-size:26px">📥</div>
+      <div style="font-weight:600;margin:6px 0;color:var(--ink)">把备份文件拖到这里</div>
+      <button class="ghost" onclick="document.getElementById('impAny').click()">选择文件（可多选）</button>
+      <div class="pill" style="margin-top:10px">自动识别 JSON / Excel / CSV / ZIP / SQL，并自动匹配中英文列名</div>
+    </div>
+    <input id="impAny" type="file" multiple class="hidden" onchange="importAnyFiles(this.files)">
+    <div id="impPreview" style="margin-top:12px"></div>
+
+    <h4 class="bk-h">三、危险操作</h4>
+    <div class="row" style="margin:0">
+      <button class="danger" onclick="wipeData()">清空全部数据</button>
+    </div>
+
+    <div class="row" style="justify-content:flex-end;margin-top:16px">
+      <button class="primary" onclick="closeModal('backupModal')">关闭</button>
     </div>
   </div>
 </div>
@@ -2067,8 +2119,728 @@ function saveSettings(){
   save();
   if(document.getElementById('cartList'))renderCart();
 }
-function exportAll(){const blob=new Blob([JSON.stringify(S,null,2)],{type:'application/json'});downloadBlob(blob,'pos_backup_'+todayStr()+'.json');toast('已导出备份');}
-function importAll(input){const f=input.files[0];if(!f)return;const r=new FileReader();r.onload=()=>{try{const o=JSON.parse(r.result);if(!o.products||!o.orders)throw 0;S=Object.assign(JSON.parse(JSON.stringify(DEF_S)),o);normalize();save();initUI();toast('备份已恢复');}catch(e){toast('导入失败：格式错误');}};r.readAsText(f);input.value='';}
+/* ============ 备份中心：底层工具（无任何外部依赖） ============ */
+const BK_ENC=new TextEncoder();
+const BK_CRC=(()=>{const t=new Uint32Array(256);for(let n=0;n<256;n++){let c=n;for(let k=0;k<8;k++)c=(c&1)?(0xEDB88320^(c>>>1)):(c>>>1);t[n]=c>>>0;}return t;})();
+function bkCrc32(u8){let c=0xFFFFFFFF;for(let i=0;i<u8.length;i++)c=BK_CRC[(c^u8[i])&0xFF]^(c>>>8);return (c^0xFFFFFFFF)>>>0;}
+function bkEsc(s){return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&apos;'}[c]));}
+function bkCol(n){let s='';n++;while(n>0){const m=(n-1)%26;s=String.fromCharCode(65+m)+s;n=(n-m-1)/26;}return s;}
+/* 极简 ZIP 打包（STORE 模式，不压缩）*/
+function bkZip(files){
+  const now=new Date();
+  const dosTime=((now.getHours()<<11)|(now.getMinutes()<<5)|(now.getSeconds()>>1))&0xFFFF;
+  const dosDate=(((now.getFullYear()-1980)<<9)|((now.getMonth()+1)<<5)|now.getDate())&0xFFFF;
+  const parts=[],central=[];let offset=0;
+  for(const f of files){
+    const nb=BK_ENC.encode(f.name),data=f.data,crc=bkCrc32(data);
+    const lh=new Uint8Array(30+nb.length),dv=new DataView(lh.buffer);
+    dv.setUint32(0,0x04034b50,true);dv.setUint16(4,20,true);dv.setUint16(6,0x0800,true);
+    dv.setUint16(8,0,true);dv.setUint16(10,dosTime,true);dv.setUint16(12,dosDate,true);
+    dv.setUint32(14,crc,true);dv.setUint32(18,data.length,true);dv.setUint32(22,data.length,true);
+    dv.setUint16(26,nb.length,true);dv.setUint16(28,0,true);lh.set(nb,30);
+    parts.push(lh,data);central.push({nb,crc,size:data.length,offset});
+    offset+=lh.length+data.length;
+  }
+  const cdStart=offset;
+  for(const c of central){
+    const ch=new Uint8Array(46+c.nb.length),dv=new DataView(ch.buffer);
+    dv.setUint32(0,0x02014b50,true);dv.setUint16(4,20,true);dv.setUint16(6,20,true);
+    dv.setUint16(8,0x0800,true);dv.setUint16(10,0,true);dv.setUint16(12,dosTime,true);
+    dv.setUint16(14,dosDate,true);dv.setUint32(16,c.crc,true);dv.setUint32(20,c.size,true);
+    dv.setUint32(24,c.size,true);dv.setUint16(28,c.nb.length,true);dv.setUint16(30,0,true);
+    dv.setUint16(32,0,true);dv.setUint16(34,0,true);dv.setUint16(36,0,true);
+    dv.setUint32(38,0,true);dv.setUint32(42,c.offset,true);ch.set(c.nb,46);
+    parts.push(ch);offset+=ch.length;
+  }
+  const eocd=new Uint8Array(22),dv=new DataView(eocd.buffer);
+  dv.setUint32(0,0x06054b50,true);dv.setUint16(8,central.length,true);dv.setUint16(10,central.length,true);
+  dv.setUint32(12,offset-cdStart,true);dv.setUint32(16,cdStart,true);parts.push(eocd);
+  return new Blob(parts,{type:'application/zip'});
+}
+/* XLSX 生成 */
+function bkSheetXml(rows,widths){
+  const cols=widths?('<cols>'+widths.map((w,i)=>'<col min="'+(i+1)+'" max="'+(i+1)+'" width="'+w+'" customWidth="1"/>').join('')+'</cols>'):'';
+  const body=rows.map((r,ri)=>'<row r="'+(ri+1)+'">'+r.map((v,ci)=>{
+    const ref=bkCol(ci)+(ri+1);
+    if(typeof v==='number'&&isFinite(v))return '<c r="'+ref+'"><v>'+v+'</v></c>';
+    return '<c r="'+ref+'" t="inlineStr"><is><t xml:space="preserve">'+bkEsc(v)+'</t></is></c>';
+  }).join('')+'</row>').join('');
+  return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+    +'<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
+    +cols+'<sheetData>'+body+'</sheetData></worksheet>';
+}
+function bkSafeSheet(n){let s=String(n||'Sheet').replace(/[\[\]\*\/\\\?:]/g,'');return (s.slice(0,31))||'Sheet';}
+function bkBuildXLSX(sheets){
+  const files=[];
+  const ct=['<?xml version="1.0" encoding="UTF-8" standalone="yes"?>',
+    '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">',
+    '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>',
+    '<Default Extension="xml" ContentType="application/xml"/>',
+    '<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>'];
+  sheets.forEach((s,i)=>ct.push('<Override PartName="/xl/worksheets/sheet'+(i+1)+'.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>'));
+  ct.push('</Types>');
+  files.push({name:'[Content_Types].xml',data:BK_ENC.encode(ct.join(''))});
+  files.push({name:'_rels/.rels',data:BK_ENC.encode('<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>')});
+  const wb='<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>'
+    +sheets.map((s,i)=>'<sheet name="'+bkEsc(bkSafeSheet(s.name))+'" sheetId="'+(i+1)+'" r:id="rId'+(i+1)+'"/>').join('')+'</sheets></workbook>';
+  files.push({name:'xl/workbook.xml',data:BK_ENC.encode(wb)});
+  const rels='<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+    +sheets.map((s,i)=>'<Relationship Id="rId'+(i+1)+'" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet'+(i+1)+'.xml"/>').join('')+'</Relationships>';
+  files.push({name:'xl/_rels/workbook.xml.rels',data:BK_ENC.encode(rels)});
+  sheets.forEach((s,i)=>files.push({name:'xl/worksheets/sheet'+(i+1)+'.xml',data:BK_ENC.encode(bkSheetXml(s.rows,s.widths))}));
+  return bkZip(files);
+}
+
+/* ============ 备份中心：表定义与导出 ============ */
+const BK_TABLES={
+  products:{name:'商品',cols:[['name','名称'],['barcode','条码'],['cat','分类'],['price','售价'],['cost','进价'],['stock','库存'],['safe','安全库存'],['unit','单位'],['emoji','图标']],get:()=>S.products},
+  members:{name:'会员',cols:[['no','卡号'],['name','姓名'],['phone','手机号'],['points','积分'],['balance','余额'],['totalSpent','累计消费'],['visits','到店次数'],['source','开卡方式'],['createdAt','开卡时间']],get:()=>S.members},
+  orders:{name:'订单',cols:[['id','单号'],['time','时间'],['memberName','会员'],['phone','手机号'],['subtotal','小计'],['tax','税额'],['discount','优惠合计'],['total','应收'],['pay','实收'],['balanceUsed','余额抵扣'],['methodName','支付方式'],['operator','收银员'],['refundedName','已退款']],get:()=>S.orders.map(o=>Object.assign({},o,{methodName:methodLabel(o.method),refundedName:o.refunded?'是':'否',time:fmtTime(o.time)}))},
+  orderItems:{name:'订单明细',cols:[['orderId','单号'],['time','时间'],['name','商品'],['price','单价'],['qty','数量'],['unit','单位'],['amount','金额']],get:()=>{const a=[];S.orders.forEach(o=>(o.items||[]).forEach(i=>a.push({orderId:o.id,time:fmtTime(o.time),name:i.name,price:i.price,qty:i.qty,unit:i.unit,amount:Number((i.price*i.qty).toFixed(2))})));return a;}},
+  stockLog:{name:'库存流水',cols:[['time','时间'],['typeName','类型'],['name','商品'],['qty','变动'],['cost','进价'],['before','变动前'],['after','变动后'],['note','备注'],['staff','操作员']],get:()=>S.stockLog.map(l=>Object.assign({},l,{typeName:(STOCK_TYPE[l.type]||['变动'])[0],time:fmtTime(l.time)}))},
+  smsLog:{name:'短信记录',cols:[['time','时间'],['name','姓名'],['phone','手机号'],['typeName','类型'],['statusName','状态'],['content','内容'],['error','备注']],get:()=>S.smsLog.map(l=>Object.assign({},l,{typeName:smsTypeLabel(l.type),statusName:(SMS_STATUS[l.status]||[l.status])[0],time:fmtTime(l.time)}))},
+  shifts:{name:'交班记录',cols:[['id','交班单号'],['time','时间'],['count','订单数'],['total','营业额'],['cash','现金'],['wx','微信'],['ali','支付宝'],['card','银行卡']],get:()=>(S.shifts||[]).map(s=>Object.assign({},s,{time:fmtTime(s.time),cash:(s.bd||{}).cash||0,wx:(s.bd||{}).wx||0,ali:(s.bd||{}).ali||0,card:(s.bd||{}).card||0}))},
+};
+function bkRows(key){
+  const t=BK_TABLES[key];
+  const head=t.cols.map(c=>c[1]);
+  const body=t.get().map(r=>t.cols.map(c=>{
+    let v=r[c[0]];
+    if(v===undefined||v===null)v='';
+    if(typeof v==='boolean')v=v?'是':'否';
+    if(typeof v==='object')v=JSON.stringify(v);
+    return v;
+  }));
+  return [head].concat(body);
+}
+function bkCSV(rows){
+  return '\ufeff'+rows.map(r=>r.map(c=>{
+    const s=String(c==null?'':c);
+    return /[",\n\r]/.test(s)?('"'+s.replace(/"/g,'""')+'"'):s;
+  }).join(',')).join('\r\n');
+}
+function bkPack(){
+  return {app:'通用收银台',version:'1.2.0',exportedAt:new Date().toISOString(),
+    shop:S.shop,products:S.products,members:S.members,orders:S.orders,
+    shifts:S.shifts,stockLog:S.stockLog,smsLog:S.smsLog,holds:S.holds,
+    seq:S.seq,cardSeq:S.cardSeq};
+}
+function openBackup(){
+  const box=document.getElementById('csvBtns');
+  if(box)box.innerHTML=Object.keys(BK_TABLES).map(k=>
+    '<button class="ghost" onclick="expTableCSV(\''+k+'\')">'+BK_TABLES[k].name+'</button>').join('');
+  const pv=document.getElementById('impPreview');if(pv)pv.innerHTML='';
+  _importQueue=[];
+  openModal('backupModal');
+}
+function expTableCSV(key){
+  const t=BK_TABLES[key];
+  if(!t)return;
+  downloadBlob(new Blob([bkCSV(bkRows(key))],{type:'text/csv;charset=utf-8'}),t.name+'_'+todayStr()+'.csv');
+  toast('已导出「'+t.name+'」CSV');
+}
+function expXLSX(){
+  const sheets=Object.keys(BK_TABLES).map(k=>({name:BK_TABLES[k].name,rows:bkRows(k),
+    widths:BK_TABLES[k].cols.map(c=>Math.max(10,Math.min(34,String(c[1]).length*2+6)))}));
+  sheets.unshift({name:'概览',widths:[18,30],rows:[
+    ['项目','数值'],
+    ['店铺名称',S.shop.name],
+    ['导出时间',fmtTime(new Date().toISOString())],
+    ['商品数',S.products.length],
+    ['会员数',S.members.length],
+    ['订单数',S.orders.length],
+    ['库存流水',S.stockLog.length],
+    ['短信记录',S.smsLog.length],
+    ['软件版本','通用收银台 1.2.0']
+  ]});
+  downloadBlob(bkBuildXLSX(sheets),'通用收银台数据_'+todayStr()+'.xlsx');
+  toast('已导出 Excel（'+sheets.length+' 个工作表）');
+}
+function expFullJSON(){
+  downloadBlob(new Blob([JSON.stringify(bkPack(),null,2)],{type:'application/json'}),'pos_backup_'+todayStr()+'.json');
+  toast('已导出完整备份');
+}
+function expFullZIP(){
+  const files=[];
+  files.push({name:'数据备份.json',data:BK_ENC.encode(JSON.stringify(bkPack(),null,2))});
+  Object.keys(BK_TABLES).forEach(k=>{
+    files.push({name:'表格/'+BK_TABLES[k].name+'.csv',data:BK_ENC.encode(bkCSV(bkRows(k)))});
+  });
+  files.push({name:'说明.txt',data:BK_ENC.encode(
+    '通用收银台 · 打包备份\n'
+    +'================================\n'
+    +'导出时间：'+fmtTime(new Date().toISOString())+'\n'
+    +'店铺名称：'+S.shop.name+'\n\n'
+    +'数据备份.json   —— 完整数据，可在「设置 → 数据备份与恢复」原样恢复\n'
+    +'表格/*.csv      —— 各数据表，可用 Excel / WPS 打开查看或交给会计\n\n'
+    +'恢复方法：把本压缩包（或里面的 数据备份.json）直接拖进「备份与恢复中心」的导入区即可，\n'
+    +'系统会自动识别格式，无需解压。\n')});
+  downloadBlob(bkZip(files),'通用收银台备份_'+todayStr()+'.zip');
+  toast('已导出打包备份（含 '+Object.keys(BK_TABLES).length+' 张表）');
+}
+function expSQL(){
+  const out=['-- 通用收银台 数据导出','-- 导出时间: '+fmtTime(new Date().toISOString()),'-- 店铺: '+S.shop.name,'',
+    'BEGIN TRANSACTION;',''];
+  Object.keys(BK_TABLES).forEach(k=>{
+    const t=BK_TABLES[k],cols=t.cols.map(c=>c[0]);
+    out.push('DROP TABLE IF EXISTS "'+t.name+'";');
+    out.push('CREATE TABLE "'+t.name+'" ('+cols.map(c=>'"'+c+'" TEXT').join(', ')+');');
+    t.get().forEach(r=>{
+      const vals=t.cols.map(c=>{
+        let v=r[c[0]];
+        if(v===undefined||v===null||v==='')return 'NULL';
+        if(typeof v==='boolean')v=v?1:0;
+        if(typeof v==='object')v=JSON.stringify(v);
+        return "'"+String(v).replace(/'/g,"''")+"'";
+      });
+      out.push('INSERT INTO "'+t.name+'" ('+cols.map(c=>'"'+c+'"').join(',')+') VALUES ('+vals.join(',')+');');
+    });
+    out.push('');
+  });
+  out.push('COMMIT;','');
+  downloadBlob(new Blob([out.join('\n')],{type:'text/plain;charset=utf-8'}),'通用收银台数据_'+todayStr()+'.sql');
+  toast('已导出 SQL 脚本');
+}
+function exportAll(){expFullJSON();}
+
+/* ============ 备份中心：导入（自动识别格式） ============ */
+let _importQueue=[];
+const BK_CAN_INFLATE=(typeof DecompressionStream!=='undefined');
+
+function bkHasPK(u8){return u8&&u8.length>3&&u8[0]===0x50&&u8[1]===0x4B;}
+function bkLooksJSON(t){const s=String(t||'').trim();return s.startsWith('{')||s.startsWith('[');}
+function bkLooksSQL(t){return /(^|\n)\s*(--|\/\*)|INSERT\s+INTO|CREATE\s+TABLE/i.test(String(t||''));}
+
+function bkDetect(name,bytes,text){
+  const ext=String(name||'').split('.').pop().toLowerCase();
+  if(bkHasPK(bytes))return 'zip';
+  if(['xlsx','xlsm'].includes(ext))return 'zip';
+  if(bkLooksJSON(text)||ext==='json')return 'json';
+  if(bkLooksSQL(text)||ext==='sql')return 'sql';
+  if(['csv','tsv','txt'].includes(ext))return 'csv';
+  if(text&&text.includes(','))return 'csv';
+  return 'unknown';
+}
+function unescXml(s){return String(s==null?'':s)
+  .replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&quot;/g,'"')
+  .replace(/&apos;/g,"'").replace(/&#39;/g,"'").replace(/&amp;/g,'&');}
+
+/* --- ZIP 解包（STORE + DEFLATE） --- */
+async function bkUnzip(bytes){
+  const u8=bytes instanceof Uint8Array?bytes:new Uint8Array(bytes);
+  const dv=new DataView(u8.buffer,u8.byteOffset,u8.byteLength);
+  let eocd=-1;
+  const floor=Math.max(0,u8.length-66000);
+  for(let i=u8.length-22;i>=floor;i--){ if(dv.getUint32(i,true)===0x06054b50){eocd=i;break;} }
+  if(eocd<0)throw new Error('不是有效的 ZIP / Excel 文件');
+  const count=dv.getUint16(eocd+10,true);
+  let p=dv.getUint32(eocd+16,true);
+  const items=[];
+  for(let i=0;i<count;i++){
+    if(dv.getUint32(p,true)!==0x02014b50)break;
+    const method=dv.getUint16(p+10,true);
+    const compSize=dv.getUint32(p+20,true);
+    const nameLen=dv.getUint16(p+28,true);
+    const extraLen=dv.getUint16(p+30,true);
+    const cmtLen=dv.getUint16(p+32,true);
+    const localOff=dv.getUint32(p+42,true);
+    const name=new TextDecoder().decode(u8.subarray(p+46,p+46+nameLen));
+    const lNameLen=dv.getUint16(localOff+26,true);
+    const lExtraLen=dv.getUint16(localOff+28,true);
+    const ds=localOff+30+lNameLen+lExtraLen;
+    items.push({name,method,raw:u8.subarray(ds,ds+compSize)});
+    p+=46+nameLen+extraLen+cmtLen;
+  }
+  const out=[];
+  for(const it of items){
+    if(it.method===0){out.push({name:it.name,data:it.raw});continue;}
+    if(it.method===8){
+      if(!BK_CAN_INFLATE)throw new Error('当前浏览器不支持解压（请改用 Chrome / Edge / 新版 Safari，或改用 JSON / CSV 备份）');
+      const st=new Blob([it.raw]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
+      const buf=await new Response(st).arrayBuffer();
+      out.push({name:it.name,data:new Uint8Array(buf)});
+    }
+  }
+  return out;
+}
+/* --- XLSX 解析 --- */
+function bkColIdx(ref){let n=0;for(const ch of ref)n=n*26+(ch.charCodeAt(0)-64);return n-1;}
+/* 共享字符串表（真实 Excel 导出的 xlsx 必带，缺失会导致整列变数字下标）*/
+function bkParseShared(xml){
+  const out=[];
+  if(!xml)return out;
+  xml=String(xml).replace(/<t\s*\/>/g,'<t></t>');
+  const siRe=/<si[^>]*>([\s\S]*?)<\/si>/g;let sm;
+  while((sm=siRe.exec(xml))){
+    let s='';const tRe=/<t[^>]*>([\s\S]*?)<\/t>/g;let tm;
+    while((tm=tRe.exec(sm[1])))s+=unescXml(tm[1]);
+    out.push(s);
+  }
+  return out;
+}
+function bkParseSheet(xml,shared){
+  const rows=[];
+  xml=String(xml||'').replace(/<t\s*\/>/g,'<t></t>');
+  const rowRe=/<row[^>]*>([\s\S]*?)<\/row>/g;
+  let rm;
+  while((rm=rowRe.exec(xml))){
+    const cells=[];
+    const cellRe=/<c([^>]*?)(?:\/>|>([\s\S]*?)<\/c>)/g;
+    let cm;
+    while((cm=cellRe.exec(rm[1]))){
+      const attrs=cm[1]||'';
+      const inner=cm[2]||'';
+      const refM=attrs.match(/r="([A-Z]+)\d+"/);
+      const idx=refM?bkColIdx(refM[1]):cells.length;
+      const t=(attrs.match(/t="([^"]+)"/)||[])[1];
+      let val='';
+      if(t==='inlineStr'){
+        const tm=inner.match(/<t[^>]*>([\s\S]*?)<\/t>/);
+        val=tm?unescXml(tm[1]):'';
+      }else{
+        const vm=inner.match(/<v>([\s\S]*?)<\/v>/);
+        const raw=vm?unescXml(vm[1]):'';
+        if(t==='s'&&shared&&shared.length)val=shared[parseInt(raw,10)]!==undefined?shared[parseInt(raw,10)]:raw;
+        else if(t==='b')val=(raw==='1'||raw==='true')?'是':'否';
+        else val=raw;
+      }
+      while(cells.length<idx)cells.push('');
+      cells[idx]=val;
+    }
+    if(cells.length)rows.push(cells);
+  }
+  return rows;
+}
+async function bkParseXLSX(bytes){
+  const entries=await bkUnzip(bytes);
+  const map={};entries.forEach(e=>{map[e.name]=e.data;});
+  const dec=new TextDecoder();
+  let shared=[];
+  for(const n of Object.keys(map)){
+    if(/sharedStrings\.xml$/i.test(n)){shared=bkParseShared(dec.decode(map[n]));break;}
+  }
+  const wb=map['xl/workbook.xml']?dec.decode(map['xl/workbook.xml']):'';
+  const rels=map['xl/_rels/workbook.xml.rels']?dec.decode(map['xl/_rels/workbook.xml.rels']):'';
+  const sheets=[];
+  const reS=/<sheet[^>]*name="([^"]*)"[^>]*r:id="([^"]*)"/g;
+  let m;
+  while((m=reS.exec(wb)))sheets.push({name:unescXml(m[1]),rid:m[2]});
+  const relMap={};
+  const reR=/<Relationship[^>]*Id="([^"]*)"[^>]*Target="([^"]*)"/g;
+  while((m=reR.exec(rels)))relMap[m[1]]=m[2];
+  const out=[];
+  for(let i=0;i<sheets.length;i++){
+    let target=relMap[sheets[i].rid]||('worksheets/sheet'+(i+1)+'.xml');
+    target=String(target).replace(/^\/?xl\//,'').replace(/^\//,'');
+    const xml=map['xl/'+target]?dec.decode(map['xl/'+target]):null;
+    if(xml)out.push({name:sheets[i].name,rows:bkParseSheet(xml,shared)});
+  }
+  return out;
+}
+/* --- CSV / SQL 解析 --- */
+function bkParseCSV(text,sep){
+  text=String(text||'').replace(/^\ufeff/,'');
+  sep=sep||',';
+  const rows=[];let row=[],cur='',q=false;
+  for(let i=0;i<text.length;i++){
+    const c=text[i];
+    if(q){
+      if(c==='"'){if(text[i+1]==='"'){cur+='"';i++;}else q=false;}
+      else cur+=c;
+    }else{
+      if(c==='"')q=true;
+      else if(c===sep){row.push(cur);cur='';}
+      else if(c==='\r'){/*skip*/}
+      else if(c==='\n'){row.push(cur);rows.push(row);row=[];cur='';}
+      else cur+=c;
+    }
+  }
+  if(cur!==''||row.length){row.push(cur);rows.push(row);}
+  return rows.filter(r=>r.length&&!(r.length===1&&String(r[0]).trim()===''));
+}
+/* 自动挑选分隔符：逗号 / 制表符 / 分号 三者取表头列数最多者 */
+function bkGuessSep(text){
+  const head=String(text||'').replace(/^\ufeff/,'').split(/\r?\n/)[0]||'';
+  const cand=[',','\t',';'];
+  let best=',',bestN=1;
+  cand.forEach(s=>{
+    const c=((bkParseCSV(head,s)[0])||[]).length;
+    if(c>bestN){bestN=c;best=s;}
+  });
+  return best;
+}
+function bkCSVToTable(rows){
+  if(!rows.length)return {header:[],data:[]};
+  const header=rows[0].map(h=>String(h).trim());
+  const data=rows.slice(1).map(r=>{const o={};header.forEach((h,i)=>o[h]=r[i]===undefined?'':r[i]);return o;});
+  return {header,data};
+}
+function bkSplitSQLValues(s){
+  const out=[];let cur='',q=false;
+  for(let i=0;i<s.length;i++){
+    const c=s[i];
+    if(q){if(c==="'"){if(s[i+1]==="'"){cur+="'";i++;}else q=false;}else cur+=c;}
+    else{if(c==="'")q=true;else if(c===','){out.push(cur.trim());cur='';}else cur+=c;}
+  }
+  out.push(cur.trim());
+  return out.map(v=>/^NULL$/i.test(v)?'':v);
+}
+function bkParseSQL(text){
+  const tables={};
+  const re=/INSERT\s+INTO\s+["`\[]?([^"`\]\s(]+)["`\]]?\s*\(([^)]*)\)\s*VALUES\s*\(([\s\S]*?)\)\s*;/gi;
+  let m;
+  while((m=re.exec(text))){
+    const tbl=m[1].trim();
+    const cols=m[2].split(',').map(s=>s.trim().replace(/^["`\[]|["`\]]$/g,''));
+    const vals=bkSplitSQLValues(m[3]);
+    if(!tables[tbl])tables[tbl]=[];
+    const o={};cols.forEach((c,i)=>o[c]=vals[i]);
+    tables[tbl].push(o);
+  }
+  return tables;
+}
+/* --- 表名 / 列名映射 --- */
+const BK_TABLE_ALIAS={
+  'products':'products','商品':'products','商品表':'products','goods':'products','items':'products',
+  'members':'members','会员':'members','会员表':'members','客户':'members','customers':'members',
+  'orders':'orders','订单':'orders','订单表':'orders','销售':'orders',
+  'orderitems':'orderItems','订单明细':'orderItems','明细':'orderItems','order_items':'orderItems',
+  'stocklog':'stockLog','库存流水':'stockLog','库存':'stockLog','stock_log':'stockLog',
+  'smslog':'smsLog','短信记录':'smsLog','短信':'smsLog','sms_log':'smsLog',
+  'shifts':'shifts','交班记录':'shifts','交班':'shifts'
+};
+const BK_FIELD_ALIAS={
+  '名称':'name','商品名称':'name','品名':'name','条码':'barcode','条形码':'barcode','分类':'cat','类别':'cat',
+  '售价':'price','单价':'price','价格':'price','零售价':'price','进价':'cost','成本':'cost','成本价':'cost',
+  '库存':'stock','库存量':'stock','安全库存':'safe','预警库存':'safe','单位':'unit','图标':'emoji',
+  '卡号':'no','会员卡号':'no','姓名':'name','会员姓名':'name','手机号':'phone','手机':'phone','电话':'phone',
+  '联系电话':'phone','积分':'points','余额':'balance','账户余额':'balance','累计消费':'totalSpent',
+  '消费总额':'totalSpent','到店次数':'visits','消费次数':'visits','开卡方式':'source','开卡时间':'createdAt',
+  '单号':'id','订单号':'id','会员':'memberName','收银员':'operator','支付方式':'methodName','已退款':'refundedName',
+  '小计':'subtotal','税额':'tax','优惠合计':'discount','优惠':'discount','应收':'total','实收':'pay',
+  '余额抵扣':'balanceUsed','数量':'qty','金额':'amount','变动':'qty','变动前':'before','变动后':'after',
+  '备注':'note','类型':'typeName','状态':'statusName','内容':'content','时间':'time','商品':'name'
+};
+/* 反向映射：中文标签 → 内部键值 */
+const BK_METHOD_REV={'现金':'cash','微信':'wx','支付宝':'ali','银行卡':'card','组合':'mix'};
+const BK_STOCK_TYPE_REV={'入库':'in','出库/报损':'out','盘点调整':'check','销售出库':'sale','退货入库':'cancel'};
+const BK_SMS_STATUS_REV={'已发送':'sent','发送失败':'fail','本地记录':'local','发送中':'pending','未发送':'skip'};
+const BK_SMS_TYPE_REV={'开卡通知':'open','消费通知':'consume','充值通知':'topup','测试短信':'test'};
+/* 导入时的真实落库数组（导出用的 get() 会 map 出新数组，不能直接 push）*/
+function bkTargetList(key){
+  if(key==='products'){S.products=S.products||[];return S.products;}
+  if(key==='members'){S.members=S.members||[];return S.members;}
+  if(key==='orders'){S.orders=S.orders||[];return S.orders;}
+  if(key==='stockLog'){S.stockLog=S.stockLog||[];return S.stockLog;}
+  if(key==='smsLog'){S.smsLog=S.smsLog||[];return S.smsLog;}
+  if(key==='shifts'){S.shifts=S.shifts||[];return S.shifts;}
+  return null;
+}
+function bkResolveTable(label){
+  const t=String(label||'').trim();
+  const low=t.toLowerCase().replace(/\s/g,'');
+  return BK_TABLE_ALIAS[t]||BK_TABLE_ALIAS[low]||null;
+}
+function bkMapRow(key,row){
+  const field={};
+  Object.keys(BK_FIELD_ALIAS).forEach(k=>field[k]=BK_FIELD_ALIAS[k]);
+  (BK_TABLES[key]?BK_TABLES[key].cols:[]).forEach(c=>{field[c[0]]=c[0];field[c[1]]=c[0];});
+  const out={};
+  Object.keys(row).forEach(k=>{
+    const f=field[String(k).trim()];
+    if(f)out[f]=row[k];
+  });
+  return out;
+}
+/* --- 读文件并解析 --- */
+async function importAnyFiles(fileList){
+  const files=[...fileList];
+  if(!files.length)return;
+  _importQueue=[];
+  for(const f of files){
+    const rec={file:f.name,size:f.size,fmt:'',kind:'',tables:{},note:'',error:''};
+    try{
+      const buf=new Uint8Array(await f.arrayBuffer());
+      let text='';
+      try{text=new TextDecoder('utf-8').decode(buf);}catch(e){}
+      rec.fmt=bkDetect(f.name,buf,text);
+
+      if(rec.fmt==='json'){
+        const o=JSON.parse(text);
+        if(o&&(o.products||o.members||o.orders||o.shop)){
+          rec.kind='full';rec.data=o;rec.note='完整备份包';
+        }else if(Array.isArray(o)){
+          const k=bkResolveTable(f.name.replace(/\.[^.]+$/,''));
+          if(!k)throw new Error('无法判断这是哪张表（文件名请带上表名，如 商品.csv）');
+          rec.kind='table';rec.tables[k]=o;rec.note='数据表数组';
+        }else{
+          rec.kind='tables';rec.tables=o;rec.note='多表 JSON';
+        }
+      }else if(rec.fmt==='zip'){
+        const entries=await bkUnzip(buf);
+        const dec=new TextDecoder();
+        const hasXl=entries.some(e=>e.name==='xl/workbook.xml');
+        if(hasXl){
+          const sheets=await bkParseXLSX(buf);
+          let hit=0;
+          sheets.forEach(s=>{
+            const k=bkResolveTable(s.name);
+            if(!k)return;
+            const {header,data}=bkCSVToTable(s.rows);
+            rec.tables[k]=data;hit++;
+          });
+          rec.kind='tables';rec.note='Excel 工作簿（识别到 '+hit+' 张表 / 共 '+sheets.length+' 个表单）';
+          if(!hit)rec.error='Excel 里的表单名与系统表名对不上（需要：'+Object.keys(BK_TABLES).map(k=>BK_TABLES[k].name).join('、')+'）';
+        }else{
+          let done=false;
+          for(const e of entries){
+            const nm=e.name.toLowerCase();
+            if(nm.endsWith('.json')){
+              try{
+                const o=JSON.parse(dec.decode(e.data));
+                if(o&&(o.products||o.members||o.orders||o.shop)){rec.kind='full';rec.data=o;rec.note='压缩包内的完整备份';done=true;break;}
+              }catch(err){}
+            }
+          }
+          if(!done){
+            for(const e of entries){
+              if(!/\.(csv|txt)$/i.test(e.name))continue;
+              const k=bkResolveTable(e.name.replace(/\.[^.]+$/,'').split('/').pop());
+              if(!k)continue;
+              const t=dec.decode(e.data);
+              const {data}=bkCSVToTable(bkParseCSV(t,bkGuessSep(t)));
+              rec.tables[k]=data;
+            }
+            rec.kind='tables';rec.note='压缩包内的 CSV 数据表';
+          }
+        }
+      }else if(rec.fmt==='csv'){
+        const rows=bkParseCSV(text,bkGuessSep(text));
+        const fn=f.name.replace(/\.[^.]+$/,'').split('/').pop();
+        let k=bkResolveTable(fn);
+        if(!k&&rows.length){
+          // 用表头反推
+          const head=rows[0].map(h=>String(h).trim());
+          let best=null,bestHit=0;
+          for(const key of Object.keys(BK_TABLES)){
+            const labels=BK_TABLES[key].cols.map(c=>c[1]);
+            const hit=head.filter(h=>labels.includes(h)).length;
+            if(hit>bestHit){bestHit=hit;best=key;}
+          }
+          if(best&&bestHit>=Math.min(2,Math.ceil(BK_TABLES[best].cols.length/2)))k=best;
+        }
+        if(!k)throw new Error('无法识别这是哪张表，请把文件名改成表名（如 商品.csv / 会员.csv）');
+        const {data}=bkCSVToTable(rows);
+        rec.kind='table';rec.tables[k]=data;rec.note='CSV 数据表';
+      }else if(rec.fmt==='sql'){
+        const t=bkParseSQL(text);
+        let hit=0;
+        Object.keys(t).forEach(name=>{
+          const k=bkResolveTable(name);
+          if(k){rec.tables[k]=t[name];hit++;}
+        });
+        if(!hit)throw new Error('SQL 里没有识别到本系统的表（应为 商品 / 会员 / 订单 / 库存流水 等）');
+        rec.kind='tables';rec.note='SQL 脚本（识别到 '+hit+' 张表）';
+      }else{
+        rec.error='无法识别的文件格式';
+      }
+      // 统计
+      rec.counts={};
+      Object.keys(rec.tables).forEach(k=>{rec.counts[k]=rec.tables[k].length;});
+    }catch(e){
+      rec.error=String(e&&e.message||e);
+    }
+    _importQueue.push(rec);
+  }
+  renderImportPreview();
+  const input=document.getElementById('impAny');if(input)input.value='';
+}
+function renderImportPreview(){
+  const box=document.getElementById('impPreview');if(!box)return;
+  if(!_importQueue.length){box.innerHTML='';return;}
+  const fmtName={json:'JSON',csv:'CSV',zip:'ZIP / Excel',sql:'SQL',unknown:'未知'};
+  box.innerHTML=_importQueue.map((r,i)=>{
+    const cls=r.error?'imp-err':'imp-ok';
+    let detail='';
+    if(r.kind==='full'){
+      const d=r.data||{};
+      detail='<div class="pill" style="margin-top:4px">完整备份：商品 '+(d.products||[]).length
+        +' · 会员 '+(d.members||[]).length+' · 订单 '+(d.orders||[]).length
+        +' · 库存流水 '+(d.stockLog||[]).length+' · 短信 '+(d.smsLog||[]).length+'</div>';
+    }else if(Object.keys(r.counts||{}).length){
+      detail='<div class="pill" style="margin-top:4px">'+Object.keys(r.counts).map(k=>
+        BK_TABLES[k].name+' '+r.counts[k]+' 条').join(' · ')+'</div>';
+    }
+    return '<div class="imp-card '+cls+'">'
+      +'<div><span class="fmt-badge">'+fmtName[r.fmt]+'</span><b>'+escapeHtml(r.file)+'</b>'
+      +'<span class="pill"> '+(r.size/1024).toFixed(1)+' KB</span></div>'
+      +(r.error?('<div class="pill" style="color:var(--danger);margin-top:4px">✕ '+escapeHtml(r.error)+'</div>')
+                :('<div class="pill" style="margin-top:4px">✓ '+escapeHtml(r.note||'已识别')+'</div>'+detail))
+      +'</div>';
+  }).join('')+'<div class="row" style="flex-wrap:wrap;gap:8px;align-items:center;margin-top:10px">'
+    +'<span class="pill" style="font-weight:700">导入方式</span>'
+    +'<select id="impMode" style="width:auto"><option value="merge">合并（保留现有数据，重复项跳过）</option>'
+    +'<option value="replace">覆盖（清空后按备份恢复，仅完整备份可用）</option></select>'
+    +'<button class="primary" onclick="doImport()">确认导入</button>'
+    +'<button class="ghost" onclick="document.getElementById(\'impPreview\').innerHTML=\'\';_importQueue=[]">清除</button>'
+    +'</div>';
+}
+function doImport(){
+  const ok=_importQueue.filter(r=>!r.error);
+  if(!ok.length){toast('没有可导入的内容');return;}
+  const mode=(document.getElementById('impMode')||{}).value||'merge';
+
+  // 完整备份包
+  const full=ok.find(r=>r.kind==='full');
+  if(full&&mode==='replace'){
+    if(!confirm('将用备份内容【覆盖】当前全部数据，当前数据不可恢复。\n建议先导出一份备份。确认继续？'))return;
+    const o=full.data;
+    S=Object.assign(JSON.parse(JSON.stringify(DEF_S)),o);
+    normalize();save();initUI();
+    document.getElementById('impPreview').innerHTML='';_importQueue=[];
+    closeModal('backupModal');
+    toast('已从备份完整恢复');
+    return;
+  }
+
+  const stat={add:0,skip:0};
+  ok.forEach(r=>{
+    if(r.kind==='full'){
+      const d=r.data;
+      // 合并模式：按主键去重
+      const mergeList=(arr,cur,keyFn)=>{
+        (arr||[]).forEach(item=>{
+          const k=keyFn(item);
+          if(cur.some(x=>keyFn(x)===k)){stat.skip++;return;}
+          cur.push(item);stat.add++;
+        });
+      };
+      mergeList(d.products,S.products,p=>p.name);
+      mergeList(d.members,S.members,p=>p.phone||p.no||p.name);
+      mergeList(d.orders,S.orders,p=>p.id);
+      mergeList(d.stockLog,S.stockLog,p=>p.time+'|'+p.name+'|'+p.qty);
+      mergeList(d.smsLog,S.smsLog,p=>p.time+'|'+p.phone);
+      mergeList(d.shifts,S.shifts,p=>p.id||p.time);
+      mergeList(d.holds,S.holds,p=>p.id);
+      return;
+    }
+    Object.keys(r.tables).forEach(key=>{
+      const rows=r.tables[key];
+      if(!BK_TABLES[key])return;
+      const list=bkTargetList(key);
+      if(!list&&key!=='orderItems')return;
+      mergeRows(key,rows,list||[],stat);
+    });
+  });
+  normalize();save();initUI();
+  document.getElementById('impPreview').innerHTML='';_importQueue=[];
+  closeModal('backupModal');
+  toast('导入完成：新增 '+stat.add+' 条，跳过重复 '+stat.skip+' 条');
+}
+function mergeRows(key,rows,list,stat){
+  const num=v=>{const n=parseFloat(String(v==null?'':v).replace(/[^\d.\-]/g,''));return isFinite(n)?n:0;};
+  rows.forEach(raw=>{
+    const r=bkMapRow(key,raw);
+    if(key==='products'){
+      const name=String(r.name||'').trim();
+      if(!name)return;
+      const hit=list.find(p=>p.name===name||(r.barcode&&p.barcode===r.barcode));
+      const data={name,barcode:String(r.barcode||''),cat:String(r.cat||'未分类'),
+        price:num(r.price),cost:num(r.cost),stock:parseInt(num(r.stock)),
+        safe:parseInt(num(r.safe)),unit:String(r.unit||'件'),emoji:String(r.emoji||'')};
+      if(hit){Object.assign(hit,data);stat.skip++;}
+      else{list.push(Object.assign({id:uid()},data));stat.add++;}
+    }else if(key==='members'){
+      const phone=String(r.phone||'').replace(/\D/g,'');
+      const no=String(r.no||'').trim();
+      if(!phone&&!no)return;
+      const hit=list.find(m=>(phone&&m.phone===phone)||(no&&m.no===no));
+      const data={};
+      if(no)data.no=no;
+      if(r.name)data.name=String(r.name);
+      if(phone)data.phone=phone;
+      data.points=parseInt(num(r.points));
+      data.balance=num(r.balance).toFixed(2);
+      data.totalSpent=num(r.totalSpent);
+      data.visits=parseInt(num(r.visits));
+      if(r.source)data.source=String(r.source);
+      if(hit)Object.assign(hit,data);
+      else{list.push(Object.assign({id:uid(),createdAt:new Date().toISOString(),
+        source:'导入',name:'会员',points:0,balance:'0.00',totalSpent:0,visits:0},data));}
+      if(hit)stat.skip++;else stat.add++;
+    }else if(key==='orders'){
+      const id=String(r.id||'').trim();
+      if(!id)return;
+      if(list.some(o=>o.id===id)){stat.skip++;return;}
+      list.push({id,time:r.time||new Date().toISOString(),
+        items:[],subtotal:num(r.subtotal),tax:num(r.tax),discount:num(r.discount),
+        total:num(r.total),pay:num(r.pay),balanceUsed:num(r.balanceUsed),
+        method:BK_METHOD_REV[String(r.methodName||'').trim()]||String(r.methodName||'cash'),
+        payBreakdown:null,memberId:null,
+        memberName:String(r.memberName||''),memberGain:0,phone:String(r.phone||''),
+        operator:String(r.operator||''),refunded:/^是|true|1$/i.test(String(r.refundedName||'')),imported:true});
+      stat.add++;
+    }else if(key==='shifts'){
+      const tid=String(r.id||'').trim()||String(r.time||'');
+      if(!S.shifts)S.shifts=[];
+      if(S.shifts.some(x=>(String(x.id||'').trim()||String(x.time||''))===tid)){stat.skip++;return;}
+      S.shifts.push({id:tid,cashier:String(r.cashier||''),time:r.time||new Date().toISOString(),
+        count:parseInt(num(r.count))||0,total:num(r.total),
+        bd:{cash:num(r.cash),wx:num(r.wx),ali:num(r.ali),card:num(r.card)}});
+      stat.add++;
+    }else if(key==='orderItems'){
+      const oid=String(r.orderId||'').trim();
+      const o=S.orders.find(x=>x.id===oid);
+      if(!o){stat.skip++;return;}
+      if(!Array.isArray(o.items))o.items=[];
+      const nm=String(r.name||'').trim();
+      if(o.items.some(i=>i.name===nm)){stat.skip++;return;}
+      o.items.push({name:nm,price:num(r.price),qty:parseInt(num(r.qty))||1,unit:String(r.unit||'件')});
+      stat.add++;
+    }else{
+      // 库存流水 / 短信记录：按 id、或「时间+名称」指纹去重后追加
+      const did=String(r.id||'').trim();
+      const sig=String(r.time||'')+'|'+String(r.name||r.phone||'');
+      if(list.some(x=>{
+        const xid=String(x.id||'').trim();
+        const xsig=String(x.time||'')+'|'+String(x.name||x.phone||'');
+        return (did&&xid===did)||xsig===sig;
+      })){stat.skip++;return;}
+      const rec=Object.assign({id:did||uid()},r);
+      if(key==='stockLog'){
+        rec.type=BK_STOCK_TYPE_REV[String(r.typeName||'').trim()]||'in';
+        delete rec.typeName;
+      }else if(key==='smsLog'){
+        rec.type=BK_SMS_TYPE_REV[String(r.typeName||'').trim()]||'consume';
+        rec.status=BK_SMS_STATUS_REV[String(r.statusName||'').trim()]||'sent';
+        delete rec.typeName;delete rec.statusName;
+      }
+      rec.imported=true;
+      list.push(rec);stat.add++;
+    }
+  });
+}
+(function bkInitDrop(){
+  const dz=document.getElementById('dropZone');
+  if(!dz)return;
+  ['dragenter','dragover'].forEach(ev=>dz.addEventListener(ev,e=>{e.preventDefault();dz.classList.add('over');}));
+  ['dragleave','drop'].forEach(ev=>dz.addEventListener(ev,e=>{e.preventDefault();dz.classList.remove('over');}));
+  dz.addEventListener('drop',e=>{if(e.dataTransfer&&e.dataTransfer.files)importAnyFiles(e.dataTransfer.files);});
+})();
+
+
+
+/* 快捷导入：从设置页选文件 → 打开备份中心并自动识别预览 */
+function quickImport(input){
+  if(input&&input.files&&input.files.length){openBackup();importAnyFiles(input.files);}
+  if(input)input.value='';
+}
+/* 旧入口保留（内部改为走通用识别），避免旧版调用失效 */
+function importAll(input){
+  const f=input&&input.files?input.files[0]:null;
+  if(!f)return;
+  openBackup();importAnyFiles(input.files);input.value='';
+}
 function wipeData(){if(!confirm('将清空全部商品、会员、订单数据，不可恢复！建议先导出备份。确认？'))return;S=Object.assign(JSON.parse(JSON.stringify(DEF_S)),{shop:S.shop});normalize();save();initUI();toast('已清空');}
 function loadDemo(){
   S.products=[
