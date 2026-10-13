@@ -60,7 +60,7 @@
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
       "displayLanguageSelector": true,
-      "language": "zh_CN",
+      "installerLanguages": ["zh_CN"],
       "include": "installer.nsh"
     }
   },
