@@ -11,6 +11,7 @@ builder-debug.yml
 dist-android/
 dist-desktop/
 dist-ios/
+dist-v11/
 *.apk
 *.exe
 *.dmg
