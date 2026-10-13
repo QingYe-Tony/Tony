@@ -35,3 +35,8 @@ android/app/src/main/assets/public/
 *.apk
 *.keystore
 *.jks
+
+# 同步服务器的运行时数据（账号 / 店铺数据，不要提交）
+sync-server/data/*.json
+sync-server/data/*.json.tmp
+sync-server/data/*.broken-*

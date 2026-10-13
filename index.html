@@ -514,6 +514,10 @@ exports.main_handler = async (event) => {
         </details>
 
         <hr style="border:none;border-top:1px solid var(--line);margin:14px 0">
+        <h3>账号登录与多端同步</h3>
+        <div id="syncBox"></div>
+
+        <hr style="border:none;border-top:1px solid var(--line);margin:14px 0">
         <h3>数据备份与恢复</h3>
         <p class="pill">所有数据保存在本机浏览器本地存储中。建议定期导出备份，换设备或清缓存前务必导出。</p>
         <div class="row" style="margin:10px 0">
@@ -545,11 +549,21 @@ exports.main_handler = async (event) => {
     <input id="pId" type="hidden">
     <div class="field"><label>商品名称 *</label><input id="pName"></div>
     <div class="row">
-      <div class="field" style="flex:1"><label>条码</label><input id="pBarcode" placeholder="可留空"></div>
+      <div class="field" style="flex:1"><label>商品编号</label><input id="pSku" placeholder="可留空"></div>
+      <div class="field" style="flex:1"><label>简码 / 拼音码</label><input id="pShortCode" placeholder="如：ZDJY"></div>
+    </div>
+    <div class="row">
+      <div class="field" style="flex:1"><label>条码 / 货号</label><input id="pBarcode" placeholder="可留空"></div>
       <div class="field" style="flex:1"><label>分类</label><input id="pCat" placeholder="如：饮料"></div>
     </div>
     <div class="row">
+      <div class="field" style="flex:1"><label>类型</label><input id="pType" placeholder="如：商品 / 服务"></div>
+      <div class="field" style="flex:1"><label>规格</label><input id="pSpec" placeholder="可留空"></div>
+      <div class="field" style="flex:1"><label>品牌</label><input id="pBrand" placeholder="可留空"></div>
+    </div>
+    <div class="row">
       <div class="field" style="flex:1"><label>单价 *</label><input id="pPrice" type="number" min="0" step="0.01"></div>
+      <div class="field" style="flex:1"><label>会员价</label><input id="pMemberPrice" type="number" min="0" step="0.01" placeholder="可留空"></div>
       <div class="field" style="flex:1"><label>进价（成本）</label><input id="pCost" type="number" min="0" step="0.01"></div>
     </div>
     <div class="row">
@@ -940,7 +954,7 @@ function nextCardNo(){
   S.cardSeq=n;return no;
 }
 function load(){try{const r=localStorage.getItem(KEY);if(r)S=Object.assign(S,JSON.parse(r));}catch(e){}normalize();}
-function save(){try{localStorage.setItem(KEY,JSON.stringify(S));}catch(e){toast('本地存储失败，请使用导出备份');}}
+function save(){try{localStorage.setItem(KEY,JSON.stringify(S));}catch(e){toast('本地存储失败，请使用导出备份');}syncTouch();}
 function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2,6);}
 function cur(){return S.shop.currency||'¥';}
 function money(n){return (S.shop.currency||'¥')+Number(n||0).toFixed(2);}
@@ -969,7 +983,7 @@ function switchTab(t){
   if(t==='orders')renderOrders();
   if(t==='reports'){renderReports();renderShift();}
   if(t==='members'){renderMembers();updateSmsBadge();}
-  if(t==='settings'){loadSettingsForm();}
+  if(t==='settings'){loadSettingsForm();renderSyncBox();}
 }
 function loadSettingsForm(){
   document.getElementById('setName').value=S.shop.name;
@@ -1338,6 +1352,7 @@ function renderStockAlert(){
 }
 function openProductModal(id){
   document.getElementById('prodModalTitle').textContent=id?'编辑商品':'新增商品';
+  const EX=['pSku','pShortCode','pType','pSpec','pBrand','pMemberPrice'];
   if(id){
     const p=S.products.find(x=>x.id===id);
     document.getElementById('pId').value=p.id;document.getElementById('pName').value=p.name;
@@ -1345,8 +1360,15 @@ function openProductModal(id){
     document.getElementById('pPrice').value=p.price;document.getElementById('pStock').value=p.stock;
     document.getElementById('pCost').value=p.cost||'';document.getElementById('pSafe').value=p.safe||0;
     document.getElementById('pUnit').value=p.unit||'件';document.getElementById('pEmoji').value=p.emoji||'';
+    document.getElementById('pSku').value=p.sku||'';
+    document.getElementById('pShortCode').value=p.shortCode||'';
+    document.getElementById('pType').value=p.ptype||'';
+    document.getElementById('pSpec').value=p.spec||'';
+    document.getElementById('pBrand').value=p.brand||'';
+    document.getElementById('pMemberPrice').value=(p.memberPrice||p.memberPrice===0)?p.memberPrice:'';
   }else{
     ['pId','pName','pBarcode','pCat','pEmoji','pCost'].forEach(i=>document.getElementById(i).value='');
+    EX.forEach(i=>document.getElementById(i).value='');
     document.getElementById('pPrice').value='';document.getElementById('pStock').value='0';
     document.getElementById('pSafe').value='0';document.getElementById('pUnit').value='件';
   }
@@ -1357,13 +1379,20 @@ function saveProduct(){
   const price=parseFloat(document.getElementById('pPrice').value);
   if(!name||isNaN(price)){toast('请填写名称和有效单价');return;}
   const id=document.getElementById('pId').value;
+  const mpRaw=document.getElementById('pMemberPrice').value.trim();
   const data={name,barcode:document.getElementById('pBarcode').value.trim(),cat:document.getElementById('pCat').value.trim()||'未分类',
     price,cost:parseFloat(document.getElementById('pCost').value||0)||0,
     stock:parseInt(document.getElementById('pStock').value||0),
     safe:parseInt(document.getElementById('pSafe').value||0)||0,
-    unit:document.getElementById('pUnit').value.trim()||'件',emoji:document.getElementById('pEmoji').value.trim()};
+    unit:document.getElementById('pUnit').value.trim()||'件',emoji:document.getElementById('pEmoji').value.trim(),
+    sku:document.getElementById('pSku').value.trim(),
+    shortCode:document.getElementById('pShortCode').value.trim(),
+    ptype:document.getElementById('pType').value.trim(),
+    spec:document.getElementById('pSpec').value.trim(),
+    brand:document.getElementById('pBrand').value.trim(),
+    memberPrice:mpRaw===''?0:(parseFloat(mpRaw)||0)};
   if(id){Object.assign(S.products.find(x=>x.id===id),data);}
-  else{S.products.push(Object.assign({id:uid()},data));}
+  else{S.products.push(Object.assign({id:uid(),createdAt:new Date().toISOString()},data));}
   save();closeModal('prodModal');renderProductTable();renderProducts();
 }
 function delProduct(id){
@@ -2193,7 +2222,7 @@ function bkBuildXLSX(sheets){
 
 /* ============ 备份中心：表定义与导出 ============ */
 const BK_TABLES={
-  products:{name:'商品',cols:[['name','名称'],['barcode','条码'],['cat','分类'],['price','售价'],['cost','进价'],['stock','库存'],['safe','安全库存'],['unit','单位'],['emoji','图标']],get:()=>S.products},
+  products:{name:'商品',cols:[['name','名称'],['sku','商品编号'],['barcode','条码'],['shortCode','简码'],['cat','分类'],['ptype','类型'],['spec','规格'],['price','售价'],['memberPrice','会员价'],['cost','进价'],['stock','库存'],['safe','安全库存'],['unit','单位'],['brand','品牌'],['emoji','图标']],get:()=>S.products},
   members:{name:'会员',cols:[['no','卡号'],['name','姓名'],['phone','手机号'],['points','积分'],['balance','余额'],['totalSpent','累计消费'],['visits','到店次数'],['source','开卡方式'],['createdAt','开卡时间']],get:()=>S.members},
   orders:{name:'订单',cols:[['id','单号'],['time','时间'],['memberName','会员'],['phone','手机号'],['subtotal','小计'],['tax','税额'],['discount','优惠合计'],['total','应收'],['pay','实收'],['balanceUsed','余额抵扣'],['methodName','支付方式'],['operator','收银员'],['refundedName','已退款']],get:()=>S.orders.map(o=>Object.assign({},o,{methodName:methodLabel(o.method),refundedName:o.refunded?'是':'否',time:fmtTime(o.time)}))},
   orderItems:{name:'订单明细',cols:[['orderId','单号'],['time','时间'],['name','商品'],['price','单价'],['qty','数量'],['unit','单位'],['amount','金额']],get:()=>{const a=[];S.orders.forEach(o=>(o.items||[]).forEach(i=>a.push({orderId:o.id,time:fmtTime(o.time),name:i.name,price:i.price,qty:i.qty,unit:i.unit,amount:Number((i.price*i.qty).toFixed(2))})));return a;}},
@@ -2220,7 +2249,7 @@ function bkCSV(rows){
   }).join(',')).join('\r\n');
 }
 function bkPack(){
-  return {app:'通用收银台',version:'1.2.0',exportedAt:new Date().toISOString(),
+  return {app:'通用收银台',version:'1.3.0',exportedAt:new Date().toISOString(),
     shop:S.shop,products:S.products,members:S.members,orders:S.orders,
     shifts:S.shifts,stockLog:S.stockLog,smsLog:S.smsLog,holds:S.holds,
     seq:S.seq,cardSeq:S.cardSeq};
@@ -2251,7 +2280,7 @@ function expXLSX(){
     ['订单数',S.orders.length],
     ['库存流水',S.stockLog.length],
     ['短信记录',S.smsLog.length],
-    ['软件版本','通用收银台 1.2.0']
+    ['软件版本','通用收银台 1.3.0']
   ]});
   downloadBlob(bkBuildXLSX(sheets),'通用收银台数据_'+todayStr()+'.xlsx');
   toast('已导出 Excel（'+sheets.length+' 个工作表）');
@@ -2308,17 +2337,36 @@ let _importQueue=[];
 const BK_CAN_INFLATE=(typeof DecompressionStream!=='undefined');
 
 function bkHasPK(u8){return u8&&u8.length>3&&u8[0]===0x50&&u8[1]===0x4B;}
+/* OLE2 / CFB 复合文档魔数：老版 Excel(.xls) 与部分系统导出的「假 .json」 */
+function bkHasOLE(u8){return !!u8&&u8.length>7&&u8[0]===0xD0&&u8[1]===0xCF&&u8[2]===0x11&&u8[3]===0xE0&&u8[4]===0xA1&&u8[5]===0xB1&&u8[6]===0x1A&&u8[7]===0xE1;}
 function bkLooksJSON(t){const s=String(t||'').trim();return s.startsWith('{')||s.startsWith('[');}
 function bkLooksSQL(t){return /(^|\n)\s*(--|\/\*)|INSERT\s+INTO|CREATE\s+TABLE/i.test(String(t||''));}
-
+function bkHasCJK(t){return /[\u4e00-\u9fa5]/.test(String(t||''));}
+/* 纯文本能否当表格读：要有换行或分隔符，且不含二进制控制字符 */
+function bkLooksTable(t){
+  const s=String(t||'').replace(/^\ufeff/,'');
+  if(s.length<3)return false;
+  if(/[\x00-\x08\x0E-\x1F]/.test(s))return false;
+  return /[\r\n]/.test(s)||/[,;\t]/.test(s);
+}
+/* 判定顺序：先看二进制容器（防扩展名撒谎），再看文本特征，最后才用扩展名兜底 */
 function bkDetect(name,bytes,text){
   const ext=String(name||'').split('.').pop().toLowerCase();
-  if(bkHasPK(bytes))return 'zip';
+  if(bkHasOLE(bytes))return 'xls';                 // 老版 Excel / CFB
+  if(bkHasPK(bytes))return 'zip';                  // xlsx / 打包 zip
+  const t=String(text||'').replace(/^\ufeff/,'').trim();
+  if(t){
+    if(bkLooksJSON(t))return 'json';
+    if(bkLooksSQL(t))return 'sql';
+    // 有些系统把表格导成「HTML 表格」却存成 .xls
+    if(/^<(\?xml|!doctype|html|table|meta)/i.test(t)&&/<(table|tr|td|th)[\s>]/i.test(t))return 'htmltable';
+    if(['csv','tsv','txt'].includes(ext))return 'csv';
+    if(bkLooksTable(t))return 'csv';
+  }
   if(['xlsx','xlsm'].includes(ext))return 'zip';
-  if(bkLooksJSON(text)||ext==='json')return 'json';
-  if(bkLooksSQL(text)||ext==='sql')return 'sql';
-  if(['csv','tsv','txt'].includes(ext))return 'csv';
-  if(text&&text.includes(','))return 'csv';
+  if(['xls','xlt','et'].includes(ext))return 'xls';
+  if(ext==='json')return 'json';
+  if(ext==='sql')return 'sql';
   return 'unknown';
 }
 function unescXml(s){return String(s==null?'':s)
@@ -2437,7 +2485,294 @@ async function bkParseXLSX(bytes){
   }
   return out;
 }
-/* --- CSV / SQL 解析 --- */
+
+/* ============ 老版二进制 Excel（.xls / BIFF）============
+   .xls 不是 zip，而是 OLE2 复合文档里的一条 Workbook 流，
+   流内容是一串 BIFF 记录。下面两个解析器分别是「容器」和「内容」。 */
+
+/* --- OLE2 / CFB 容器：取出 Workbook 流 --- */
+function bkOleWorkbook(bytes){
+  const u8=bytes instanceof Uint8Array?bytes:new Uint8Array(bytes);
+  if(!bkHasOLE(u8))throw new Error('不是有效的 Excel(.xls) 文件');
+  const dv=new DataView(u8.buffer,u8.byteOffset,u8.byteLength);
+  const secSize=1<<dv.getUint16(0x1E,true);      // 通常 512
+  const miniSize=1<<dv.getUint16(0x20,true);     // 通常 64
+  const dirStart=dv.getUint32(0x30,true);
+  const cutOff=dv.getUint32(0x38,true);          // 小于该值走 mini 流
+  const miniFatStart=dv.getUint32(0x3C,true);
+  const numMiniFat=dv.getUint32(0x40,true);
+  const difatStart=dv.getUint32(0x44,true);
+  const numDifat=dv.getUint32(0x48,true);
+  const secOff=n=>secSize*(n+1);
+
+  /* 1) DIFAT → 所有 FAT 扇区号 */
+  const difat=[];
+  for(let i=0;i<109;i++){
+    const v=dv.getUint32(0x4C+i*4,true);
+    if(v===0xFFFFFFFF)break;
+    difat.push(v);
+  }
+  let dsec=difatStart,guard=0;
+  while(dsec!==0xFFFFFFFE&&dsec!==0xFFFFFFFF&&guard++<numDifat+8){
+    const base=secOff(dsec),cnt=(secSize/4)-1;
+    for(let i=0;i<cnt;i++){
+      const v=dv.getUint32(base+i*4,true);
+      if(v!==0xFFFFFFFF)difat.push(v);
+    }
+    dsec=dv.getUint32(base+cnt*4,true);
+  }
+
+  /* 2) FAT：扇区号 → 下一扇区号 */
+  const fat=[];
+  for(const fs of difat){
+    const base=secOff(fs);
+    for(let i=0;i<secSize/4;i++)fat.push(dv.getUint32(base+i*4,true));
+  }
+
+  const readChain=(start,size)=>{
+    const cap=(size===undefined)?0x7FFFFFFF:size;
+    const out=new Uint8Array(Math.min(cap,0x4000000));
+    let pos=0,s=start,g=0;
+    while(s!==0xFFFFFFFE&&s!==0xFFFFFFFF&&pos<out.length&&g++<2e6){
+      const base=secOff(s);
+      const n=Math.min(secSize,out.length-pos,Math.max(0,u8.length-base));
+      if(n<=0)break;
+      out.set(u8.subarray(base,base+n),pos);
+      pos+=n;
+      s=fat[s];
+      if(s===undefined)break;
+    }
+    return out.subarray(0,pos);
+  };
+
+  /* 3) 目录项（128 字节/项），第 0 项是根，其链即 mini 流 */
+  const dir=readChain(dirStart,undefined);
+  const ddv=new DataView(dir.buffer,dir.byteOffset,dir.byteLength);
+  const entries=[];
+  for(let p=0;p+128<=dir.length;p+=128){
+    const nameLen=ddv.getUint16(p+0x40,true);
+    let nm='';
+    if(nameLen>2&&nameLen<=64){
+      for(let i=0;i<nameLen-2;i+=2)nm+=String.fromCharCode(ddv.getUint16(p+i,true));
+    }
+    entries.push({name:nm,type:dir[p+0x42],
+      start:ddv.getUint32(p+0x74,true),size:ddv.getUint32(p+0x78,true)});
+  }
+  if(!entries.length)throw new Error('Excel 文件目录为空');
+  const root=entries[0];
+  const miniStream=readChain(root.start,root.size);
+
+  /* 4) MiniFAT + 小流读取 */
+  const miniFatRaw=readChain(miniFatStart,numMiniFat*secSize);
+  const miniFat=[];
+  for(let i=0;i+4<=miniFatRaw.length;i+=4){
+    miniFat.push((miniFatRaw[i])|(miniFatRaw[i+1]<<8)|(miniFatRaw[i+2]<<16)|(miniFatRaw[i+3]<<24));
+  }
+  const readMini=(start,size)=>{
+    const out=new Uint8Array(size);let pos=0,s=start,g=0;
+    while(s!==0xFFFFFFFE&&s!==0xFFFFFFFF&&pos<size&&g++<2e6){
+      const base=s*miniSize;
+      const n=Math.min(miniSize,size-pos,Math.max(0,miniStream.length-base));
+      if(n<=0)break;
+      out.set(miniStream.subarray(base,base+n),pos);
+      pos+=n;
+      s=miniFat[s];
+      if(s===undefined)break;
+    }
+    return out.subarray(0,pos);
+  };
+
+  const pick=nm=>{
+    const e=entries.find(x=>x.type===2&&x.name===nm);
+    if(!e)return null;
+    return e.size<cutOff?readMini(e.start,e.size):readChain(e.start,e.size);
+  };
+  return pick('Workbook')||pick('Book')||null;
+}
+
+/* --- BIFF 记录解析 --- */
+function bkRK(v){
+  let n;
+  if(v&0x02){n=v>>2;}                       // 整数型（含符号位）
+  else{
+    const ab=new ArrayBuffer(8),d=new DataView(ab);
+    d.setUint32(4,v&0xFFFFFFFC,true);       // 高 4 字节即 double 高位
+    n=d.getFloat64(0,true);
+  }
+  if(v&0x01)n/=100;                         // 末位为「除以 100」标记
+  return n;
+}
+function bkParseXLS(bytes){
+  const wb=bkOleWorkbook(bytes);
+  if(!wb||!wb.length)throw new Error('Excel 文件里找不到工作表数据（Workbook 流）');
+  const dv=new DataView(wb.buffer,wb.byteOffset,wb.byteLength);
+  const N=wb.length;
+  const recs=[];                            // [type,dataStart,len]
+  for(let p=0;p+4<=N;){
+    const type=dv.getUint16(p,true),len=dv.getUint16(p+2,true);
+    recs.push({type,start:p+4,len});
+    p+=4+len;
+  }
+  /* 1) 工作簿全局区：BIFF 版本、BOUNDSHEET、SST */
+  let biff8=true;
+  const bounds=[];
+  let sst=[];
+  for(let i=0;i<recs.length;i++){
+    const r=recs[i];
+    if(r.type===0x000A)break;               // EOF：全局区结束
+    if(r.type===0x0809&&r.len>=4){
+      const ver=dv.getUint16(r.start,true);
+      if(ver===0x0500)biff8=false;
+    }else if(r.type===0x0085&&r.len>=7){    // BOUNDSHEET
+      const pos=dv.getUint32(r.start,true);
+      let cch,flags=0,nmOff;
+      if(biff8){cch=dv.getUint8(r.start+6);flags=dv.getUint8(r.start+7);nmOff=r.start+8;}
+      else{cch=dv.getUint8(r.start+5);nmOff=r.start+6;}
+      let nm='';
+      for(let k=0;k<cch;k++){
+        nm+=String.fromCharCode((biff8&&(flags&0x01))?dv.getUint16(nmOff+k*2,true):dv.getUint8(nmOff+k));
+      }
+      bounds.push({name:nm,pos});
+    }else if(r.type===0x00FC){              // SST：后续 CONTINUE 也属于它
+      const blocks=[wb.subarray(r.start,r.start+r.len)];
+      for(let j=i+1;j<recs.length&&recs[j].type===0x003C;j++){
+        blocks.push(wb.subarray(recs[j].start,recs[j].start+recs[j].len));
+      }
+      sst=bkReadSST(blocks);
+    }
+  }
+  /* 2) 逐工作表解析单元格 */
+  const out=[];
+  for(const b of bounds){
+    if(b.pos>=N)continue;
+    out.push({name:b.name||('sheet'+out.length+1),
+      rows:bkBiffSheet(dv,wb,N,b.pos,sst,biff8)});
+  }
+  return out;
+}
+/* SST（共享字符串表）：字符串可跨 CONTINUE 记录，续块首字节是新编码标志 */
+function bkReadSST(blocks){
+  let bi=0,off=0;
+  const avail=()=>blocks[bi].length-off;
+  const next=()=>{bi++;off=0;};
+  const u8=()=>{if(avail()===0)next();return blocks[bi][off++];};
+  const u16=()=>u8()|(u8()<<8);
+  const u32=()=>u8()|(u8()<<8)|(u8()<<16)|(u8()<<24);
+  const skip=k=>{let left=k;while(left>0){if(avail()===0)next();const t=Math.min(left,avail());off+=t;left-=t;}};
+  const chars=(cch,high)=>{
+    let s='',left=cch,hl=high;
+    while(left>0){
+      if(avail()===0){next();if(bi>=blocks.length)break;hl=u8()&0x01;}
+      const per=hl?2:1;
+      let take=Math.min(left,Math.floor(avail()/per));
+      if(take<=0){take=1;}
+      for(let i=0;i<take;i++)s+=String.fromCharCode(hl?(u8()|(u8()<<8)):u8());
+      left-=take;
+    }
+    return s;
+  };
+  const total=u32(),uniq=u32();
+  const out=[];
+  for(let i=0;i<uniq&&bi<blocks.length;i++){
+    const cch=u16();
+    const flags=u8();
+    const high=flags&0x01,ext=flags&0x04,rich=flags&0x08;
+    let cRun=0,cbExt=0;
+    if(rich)cRun=u16();
+    if(ext)cbExt=u32();
+    out.push(chars(cch,high));
+    if(rich)skip(cRun*4);
+    if(ext)skip(cbExt);
+  }
+  return out;
+}
+function bkBiffSheet(dv,wb,N,from,sst,biff8){
+  const cells=new Map();
+  let maxR=-1,maxC=-1;
+  const set=(r,c,v)=>{
+    if(r<0||c<0||r>200000||c>2000)return;
+    if(v===undefined||v===null||v==='')return;
+    cells.set(r+':'+c,v);
+    if(r>maxR)maxR=r;
+    if(c>maxC)maxC=c;
+  };
+  /* BIFF8 短字符串：cch(2)+flags(1)+字符；BIFF5：cch(1)+字符 */
+  const shortStr=(o)=>{
+    if(o+1>N)return '';
+    let cch,flags=0,off;
+    if(biff8){cch=dv.getUint16(o,true);flags=dv.getUint8(o+2);off=o+3;}
+    else{cch=dv.getUint8(o);off=o+1;}
+    let s='';
+    for(let i=0;i<cch;i++){
+      s+=String.fromCharCode((biff8&&(flags&0x01))?dv.getUint16(off+i*2,true):dv.getUint8(off+i));
+    }
+    return s;
+  };
+  let pending=null;
+  for(let p=from;p+4<=N;){
+    const type=dv.getUint16(p,true),len=dv.getUint16(p+2,true);
+    const D=p+4;
+    if(type===0x000A)break;                 // 本表 EOF
+    if(type===0x00FD&&len>=10){             // LABELSST
+      set(dv.getUint16(D,true),dv.getUint16(D+2,true),
+        sst[dv.getUint32(D+6,true)]!==undefined?sst[dv.getUint32(D+6,true)]:'');
+    }else if(type===0x0204&&len>=6){        // LABEL（BIFF5）
+      set(dv.getUint16(D,true),dv.getUint16(D+2,true),shortStr(D+6));
+    }else if(type===0x0203&&len>=14){       // NUMBER
+      set(dv.getUint16(D,true),dv.getUint16(D+2,true),dv.getFloat64(D+6,true));
+    }else if(type===0x027E&&len>=10){       // RK
+      set(dv.getUint16(D,true),dv.getUint16(D+2,true),bkRK(dv.getUint32(D+6,true)));
+    }else if(type===0x00BD&&len>=6){        // MULRK：一行多个 RK
+      const row=dv.getUint16(D,true);
+      let col=dv.getUint16(D+2,true),o=4;
+      while(o+6<=len-2){
+        set(row,col,bkRK(dv.getUint32(D+o+2,true)));
+        col++;o+=6;
+      }
+    }else if(type===0x0006&&len>=20){       // FORMULA
+      const row=dv.getUint16(D,true),col=dv.getUint16(D+2,true);
+      const b6=dv.getUint8(D+12),b7=dv.getUint8(D+13);
+      if(b6===0xFF&&b7===0xFF)pending={row,col};             // 结果字符串在后面的 STRING 记录
+      else if(b6===0xFF&&b7===0xFE)set(row,col,dv.getUint8(D+6)?'是':'否');
+      else if(b6===0xFF&&b7===0xFD){}                        // 错误值，跳过
+      else if(b6===0xFF&&b7===0xFC){}                        // 空
+      else set(row,col,dv.getFloat64(D+6,true));
+    }else if(type===0x0207&&pending){       // STRING
+      set(pending.row,pending.col,shortStr(D));
+      pending=null;
+    }else if(type===0x0205&&len>=8){        // BOOLERR
+      const isErr=dv.getUint8(D+7);
+      if(!isErr)set(dv.getUint16(D,true),dv.getUint16(D+2,true),dv.getUint8(D+6)?'是':'否');
+    }
+    p=D+len;
+  }
+  const rows=[];
+  for(let r=0;r<=maxR;r++){
+    const row=[];
+    for(let c=0;c<=maxC;c++){
+      const v=cells.get(r+':'+c);
+      row.push(v===undefined?'':v);
+    }
+    rows.push(row);
+  }
+  return rows;
+}
+/* --- HTML 表格（有些系统把 .xls 导成 HTML） --- */
+function bkParseHtmlTable(text){
+  const body=String(text||'').replace(/<script[\s\S]*?<\/script>/gi,'')
+    .replace(/<style[\s\S]*?<\/style>/gi,'');
+  const trs=body.match(/<tr[\s\S]*?<\/tr>/gi)||[];
+  const rows=[];
+  trs.forEach(tr=>{
+    const tds=tr.match(/<t[hd][\s\S]*?<\/t[hd]>/gi)||[];
+    rows.push(tds.map(td=>{
+      const inner=td.replace(/^<t[hd][^>]*>/i,'').replace(/<\/t[hd]>$/i,'');
+      return unescXml(inner.replace(/<br\s*\/?>/gi,'\n').replace(/<[^>]+>/g,'')).trim();
+    }));
+  });
+  return rows.filter(r=>r.length&&!(r.length===1&&r[0]===''));
+}
+
 function bkParseCSV(text,sep){
   text=String(text||'').replace(/^\ufeff/,'');
   sep=sep||',';
@@ -2501,18 +2836,23 @@ function bkParseSQL(text){
 }
 /* --- 表名 / 列名映射 --- */
 const BK_TABLE_ALIAS={
-  'products':'products','商品':'products','商品表':'products','goods':'products','items':'products',
-  'members':'members','会员':'members','会员表':'members','客户':'members','customers':'members',
-  'orders':'orders','订单':'orders','订单表':'orders','销售':'orders',
+  'products':'products','商品':'products','商品表':'products','商品列表':'products','goods':'products','items':'products',
+  'members':'members','会员':'members','会员表':'members','会员列表':'members','客户':'members','客户列表':'members','customers':'members',
+  'orders':'orders','订单':'orders','订单表':'orders','订单列表':'orders','销售':'orders','销售记录':'orders',
   'orderitems':'orderItems','订单明细':'orderItems','明细':'orderItems','order_items':'orderItems',
   'stocklog':'stockLog','库存流水':'stockLog','库存':'stockLog','stock_log':'stockLog',
-  'smslog':'smsLog','短信记录':'smsLog','短信':'smsLog','sms_log':'smsLog',
+  'smslog':'smsLog','短信记录':'smsLog','短信':'smsLog','短信列表':'smsLog','sms_log':'smsLog',
   'shifts':'shifts','交班记录':'shifts','交班':'shifts'
 };
 const BK_FIELD_ALIAS={
-  '名称':'name','商品名称':'name','品名':'name','条码':'barcode','条形码':'barcode','分类':'cat','类别':'cat',
-  '售价':'price','单价':'price','价格':'price','零售价':'price','进价':'cost','成本':'cost','成本价':'cost',
-  '库存':'stock','库存量':'stock','安全库存':'safe','预警库存':'safe','单位':'unit','图标':'emoji',
+  '名称':'name','商品名称':'name','品名':'name','产品名称':'name','条码':'barcode','条形码':'barcode',
+  '货号':'barcode','商品货号':'barcode','分类':'cat','类别':'cat','商品分类':'cat','产品分类':'cat',
+  '售价':'price','单价':'price','价格':'price','零售价':'price','零售价格':'price','销售价':'price',
+  '进价':'cost','成本':'cost','成本价':'cost','进货价':'cost','采购价':'cost',
+  '库存':'stock','库存量':'stock','现存':'stock','安全库存':'safe','预警库存':'safe','单位':'unit','图标':'emoji',
+  '商品编号':'sku','货品编号':'sku','sku':'sku','商品简码':'shortCode','简码':'shortCode','拼音码':'shortCode',
+  '规格':'spec','型号':'spec','会员特价':'memberPrice','会员价':'memberPrice',
+  '商品类型':'ptype','类型名称':'ptype','品牌':'brand','门店':'shopName','创建时间':'createdAt','建档时间':'createdAt',
   '卡号':'no','会员卡号':'no','姓名':'name','会员姓名':'name','手机号':'phone','手机':'phone','电话':'phone',
   '联系电话':'phone','积分':'points','余额':'balance','账户余额':'balance','累计消费':'totalSpent',
   '消费总额':'totalSpent','到店次数':'visits','消费次数':'visits','开卡方式':'source','开卡时间':'createdAt',
@@ -2521,6 +2861,60 @@ const BK_FIELD_ALIAS={
   '余额抵扣':'balanceUsed','数量':'qty','金额':'amount','变动':'qty','变动前':'before','变动后':'after',
   '备注':'note','类型':'typeName','状态':'statusName','内容':'content','时间':'time','商品':'name'
 };
+/* 每张表「认得出自己」的列名集合：用于在文件里反推这是哪张表 */
+const BK_EXTRA_LABELS={
+  products:['商品编号','商品名称','产品名称','品名','名称','货号','条码','条形码','单位','商品简码','简码','拼音码',
+    '零售价','零售价格','售价','单价','销售价','进价','进货价','成本价','采购价','库存','库存量','现存',
+    '安全库存','预警库存','商品类型','会员特价','会员价','规格','型号','商品分类','产品分类','分类','品牌',
+    '门店','图标','创建时间','建档时间','备注','序号'],
+  members:['卡号','会员卡号','姓名','会员姓名','手机号','手机','电话','联系电话','积分','余额','账户余额',
+    '累计消费','消费总额','到店次数','消费次数','开卡方式','开卡时间','会员等级','等级','序号','备注'],
+  orders:['单号','订单号','时间','会员','会员姓名','手机号','小计','税额','优惠合计','优惠','应收','实收',
+    '余额抵扣','支付方式','收银员','已退款','退款','订单数','营业额'],
+  orderItems:['单号','订单号','时间','商品','商品名称','单价','数量','单位','金额','小计'],
+  stockLog:['时间','类型','商品','商品名称','变动','进价','变动前','变动后','备注','操作员','小计'],
+  smsLog:['时间','姓名','手机号','类型','状态','内容','备注','短信内容'],
+  shifts:['交班单号','时间','订单数','营业额','现金','微信','支付宝','银行卡','交班','操作员']
+};
+/* 在表格前若干行里找出最像表头的一行，并判断属于哪张表 */
+function bkFindHeader(rows,preferKey){
+  let best={key:preferKey||null,row:0,score:0};
+  const scan=Math.min(rows.length,20);
+  for(let r=0;r<scan;r++){
+    const raw=rows[r]||[];
+    const head=raw.map(x=>String(x==null?'':x).trim()).filter(Boolean);
+    if(head.length<2)continue;
+    for(const key of Object.keys(BK_TABLES)){
+      const labels=BK_EXTRA_LABELS[key]||[];
+      let hit=0;
+      head.forEach(h=>{
+        if(labels.includes(h))hit+=1;
+        else if(BK_FIELD_ALIAS[h])hit+=0.4;    // 通用别名只作软命中
+      });
+      if(preferKey===key)hit+=1.5;             // 文件名/表单名给过提示
+      const scored=hit-(r*0.15);               // 同样命中数时优先靠前的行
+      if(hit>=2&&scored>best.score)best={key,row:r,score:scored};
+    }
+  }
+  return best.score>=2?best:null;
+}
+/* JSON 外壳解包：{title,total,items:[...]} / {data:[...]} / {list:[...]} 等 */
+const BK_JSON_ARRAY_KEYS=['items','data','list','rows','records','result','results','products','goods',
+  'members','customers','orders','商品','商品列表','会员','订单','明细'];
+function bkUnwrapJson(o,fileName){
+  if(Array.isArray(o))return {arr:o,hintKey:null,hintName:null};
+  if(!o||typeof o!=='object')return null;
+  // 直接就是本系统的完整备份
+  if(o.products||o.members||o.orders||o.shop)return {full:o};
+  const titleHint=typeof o.title==='string'?o.title:(typeof o.name==='string'?o.name:null);
+  for(const k of BK_JSON_ARRAY_KEYS){
+    if(Array.isArray(o[k]))return {arr:o[k],hintKey:bkResolveTable(k),hintName:titleHint||k};
+  }
+  // 找不到数组：当作「多表对象」，键名即表名
+  const keys=Object.keys(o).filter(k=>Array.isArray(o[k]));
+  if(keys.length)return {arr:null,tables:o,hintName:titleHint};
+  return {arr:null,tables:null,hintName:titleHint};
+}
 /* 反向映射：中文标签 → 内部键值 */
 const BK_METHOD_REV={'现金':'cash','微信':'wx','支付宝':'ali','银行卡':'card','组合':'mix'};
 const BK_STOCK_TYPE_REV={'入库':'in','出库/报损':'out','盘点调整':'check','销售出库':'sale','退货入库':'cancel'};
@@ -2552,6 +2946,82 @@ function bkMapRow(key,row){
   });
   return out;
 }
+/* 从第 headerRow 行当表头，把其余行转成对象数组（跳过标题行/合计行） */
+function bkRowsToObjects(rows,headerRow){
+  headerRow=headerRow||0;
+  const head=(rows[headerRow]||[]).map(h=>String(h==null?'':h).trim());
+  const out=[];
+  for(let i=headerRow+1;i<rows.length;i++){
+    const r=rows[i]||[];
+    const o={};
+    let filled=0;
+    head.forEach((h,ci)=>{
+      if(!h)return;
+      const v=r[ci];
+      const sv=(v===undefined||v===null)?'':v;
+      o[h]=sv;
+      if(String(sv).trim()!=='')filled++;
+    });
+    if(filled)out.push(o);
+  }
+  return out;
+}
+/* JSON 对象数组 → 与 Excel/CSV 路径一致的归一化对象数组。
+   目的：空单元格在 xls 里是 ''、在 JSON 里是 null，归一化后两种来源结果完全相同，
+   mergeRows 的「来源是否提供了该字段」判断才可靠。 */
+function bkNormalizeObjects(arr){
+  if(!Array.isArray(arr))return [];
+  const out=[];
+  arr.forEach(o=>{
+    if(!o||typeof o!=='object'||Array.isArray(o))return;
+    const n={};
+    let filled=0;
+    Object.keys(o).forEach(k=>{
+      const key=String(k==null?'':k).trim();
+      if(!key)return;
+      const v=o[k];
+      let sv;
+      if(v===undefined||v===null)sv='';
+      else if(typeof v==='object')sv=JSON.stringify(v);
+      else sv=v;
+      n[key]=sv;
+      if(String(sv).trim()!=='')filled++;
+    });
+    if(filled)out.push(n);
+  });
+  return out;
+}
+/* 一个 Excel 文件里的多个工作表 → 分别映射到系统表 */
+function bkSheetsToTables(sheets,rec){
+  let hit=0,filled=0;
+  const notes=[],emptyNotes=[];
+  sheets.forEach(s=>{
+    const prefer=bkResolveTable(s.name);
+    const hd=bkFindHeader(s.rows,prefer);
+    const k=(hd&&hd.key)||prefer;
+    if(!k)return;
+    const data=bkRowsToObjects(s.rows,hd?hd.row:0);
+    hit++;
+    /* 空表也登记（预览里如实显示「0 条」），这样「导出→再导入」的回环能一一对应 */
+    if(data.length){
+      filled++;
+      notes.push(s.name);
+      if(rec.tables[k]&&rec.tables[k].length)rec.tables[k]=rec.tables[k].concat(data);
+      else rec.tables[k]=data;
+    }else{
+      emptyNotes.push(s.name);
+      if(!rec.tables[k])rec.tables[k]=[];
+    }
+  });
+  rec.kind='tables';
+  if(hit){
+    rec.note='表格（识别到 '+hit+' 张：'+notes.concat(emptyNotes).join('、')+' / 共 '+sheets.length+' 个表单）'
+      +(filled?'':'（各表均无数据行）');
+  }else{
+    rec.error='表头与系统表对不上（需要：'+Object.keys(BK_TABLES).map(k=>BK_TABLES[k].name).join('、')
+      +'）；也可以把文件名改成表名再导入';
+  }
+}
 /* --- 读文件并解析 --- */
 async function importAnyFiles(fileList){
   const files=[...fileList];
@@ -2566,31 +3036,41 @@ async function importAnyFiles(fileList){
       rec.fmt=bkDetect(f.name,buf,text);
 
       if(rec.fmt==='json'){
-        const o=JSON.parse(text);
-        if(o&&(o.products||o.members||o.orders||o.shop)){
-          rec.kind='full';rec.data=o;rec.note='完整备份包';
-        }else if(Array.isArray(o)){
-          const k=bkResolveTable(f.name.replace(/\.[^.]+$/,''));
-          if(!k)throw new Error('无法判断这是哪张表（文件名请带上表名，如 商品.csv）');
-          rec.kind='table';rec.tables[k]=o;rec.note='数据表数组';
+        let o;
+        try{o=JSON.parse(text.replace(/^\ufeff/,'').trim());}
+        catch(err){throw new Error('文件内容是 JSON 格式错误（该文件可能其实是 Excel，请直接把原文件拖进来）');}
+        const u=bkUnwrapJson(o,f.name);
+        if(u&&u.full){rec.kind='full';rec.data=u.full;rec.note='完整备份包';}
+        else if(u&&u.arr){
+          const fn=f.name.replace(/\.[^.]+$/,'').split('/').pop();
+          const k=u.hintKey||bkResolveTable(fn)||bkResolveTable(u.hintName||'');
+          if(!k)throw new Error('无法判断这是哪张表（文件名或 title 请带上表名，如 商品.json）');
+          rec.kind='table';rec.tables[k]=bkNormalizeObjects(u.arr);
+          rec.note='数据表数组'+(u.hintName?('（'+u.hintName+'）'):'');
+        }else if(u&&u.tables){
+          let hit=0;
+          Object.keys(u.tables).forEach(k=>{
+            const key=bkResolveTable(k);
+            if(key){rec.tables[key]=bkNormalizeObjects(u.tables[k]);hit++;}
+          });
+          if(!hit)throw new Error('JSON 里没有识别到本系统的表（应为 商品 / 会员 / 订单 等）');
+          rec.kind='tables';rec.note='多表 JSON（识别到 '+hit+' 张表）';
         }else{
-          rec.kind='tables';rec.tables=o;rec.note='多表 JSON';
+          throw new Error('这个 JSON 里没有数据数组，也不是本系统的备份文件');
         }
+      }else if(rec.fmt==='xls'){
+        const sheets=bkParseXLS(buf);
+        bkSheetsToTables(sheets,rec);
+      }else if(rec.fmt==='htmltable'){
+        const sheets=[{name:f.name.replace(/\.[^.]+$/,''),rows:bkParseHtmlTable(text)}];
+        bkSheetsToTables(sheets,rec);
       }else if(rec.fmt==='zip'){
         const entries=await bkUnzip(buf);
         const dec=new TextDecoder();
         const hasXl=entries.some(e=>e.name==='xl/workbook.xml');
         if(hasXl){
           const sheets=await bkParseXLSX(buf);
-          let hit=0;
-          sheets.forEach(s=>{
-            const k=bkResolveTable(s.name);
-            if(!k)return;
-            const {header,data}=bkCSVToTable(s.rows);
-            rec.tables[k]=data;hit++;
-          });
-          rec.kind='tables';rec.note='Excel 工作簿（识别到 '+hit+' 张表 / 共 '+sheets.length+' 个表单）';
-          if(!hit)rec.error='Excel 里的表单名与系统表名对不上（需要：'+Object.keys(BK_TABLES).map(k=>BK_TABLES[k].name).join('、')+'）';
+          bkSheetsToTables(sheets,rec);
         }else{
           let done=false;
           for(const e of entries){
@@ -2617,21 +3097,12 @@ async function importAnyFiles(fileList){
       }else if(rec.fmt==='csv'){
         const rows=bkParseCSV(text,bkGuessSep(text));
         const fn=f.name.replace(/\.[^.]+$/,'').split('/').pop();
-        let k=bkResolveTable(fn);
-        if(!k&&rows.length){
-          // 用表头反推
-          const head=rows[0].map(h=>String(h).trim());
-          let best=null,bestHit=0;
-          for(const key of Object.keys(BK_TABLES)){
-            const labels=BK_TABLES[key].cols.map(c=>c[1]);
-            const hit=head.filter(h=>labels.includes(h)).length;
-            if(hit>bestHit){bestHit=hit;best=key;}
-          }
-          if(best&&bestHit>=Math.min(2,Math.ceil(BK_TABLES[best].cols.length/2)))k=best;
-        }
+        const prefer=bkResolveTable(fn);
+        const hd=bkFindHeader(rows,prefer);
+        const k=(hd&&hd.key)||prefer;
         if(!k)throw new Error('无法识别这是哪张表，请把文件名改成表名（如 商品.csv / 会员.csv）');
-        const {data}=bkCSVToTable(rows);
-        rec.kind='table';rec.tables[k]=data;rec.note='CSV 数据表';
+        rec.kind='table';rec.tables[k]=bkRowsToObjects(rows,hd?hd.row:0);
+        rec.note='CSV 数据表'+(hd&&hd.row>0?('（自动跳过前 '+hd.row+' 行标题）'):'');
       }else if(rec.fmt==='sql'){
         const t=bkParseSQL(text);
         let hit=0;
@@ -2658,7 +3129,7 @@ async function importAnyFiles(fileList){
 function renderImportPreview(){
   const box=document.getElementById('impPreview');if(!box)return;
   if(!_importQueue.length){box.innerHTML='';return;}
-  const fmtName={json:'JSON',csv:'CSV',zip:'ZIP / Excel',sql:'SQL',unknown:'未知'};
+  const fmtName={json:'JSON',csv:'CSV / TSV',zip:'ZIP / Excel(xlsx)',xls:'Excel(xls)',htmltable:'HTML 表格',sql:'SQL',unknown:'未知'};
   box.innerHTML=_importQueue.map((r,i)=>{
     const cls=r.error?'imp-err':'imp-ok';
     let detail='';
@@ -2681,6 +3152,10 @@ function renderImportPreview(){
     +'<span class="pill" style="font-weight:700">导入方式</span>'
     +'<select id="impMode" style="width:auto"><option value="merge">合并（保留现有数据，重复项跳过）</option>'
     +'<option value="replace">覆盖（清空后按备份恢复，仅完整备份可用）</option></select>'
+    +'<span class="pill">新商品若来源没有库存列，按</span>'
+    +'<select id="impNoStock" style="width:auto" title="很多商品导出表没有库存列，按 0 计会导致这些商品显示「缺货」无法售出">'
+    +'<option value="9999">9999（不限库存，可正常销售）</option>'
+    +'<option value="0">0（缺货，需先入库）</option></select>'
     +'<button class="primary" onclick="doImport()">确认导入</button>'
     +'<button class="ghost" onclick="document.getElementById(\'impPreview\').innerHTML=\'\';_importQueue=[]">清除</button>'
     +'</div>';
@@ -2739,17 +3214,54 @@ function doImport(){
 }
 function mergeRows(key,rows,list,stat){
   const num=v=>{const n=parseFloat(String(v==null?'':v).replace(/[^\d.\-]/g,''));return isFinite(n)?n:0;};
+  const has=(o,k)=>o[k]!==undefined&&o[k]!==null&&String(o[k]).trim()!=='';
+  const noStock=!!(document.getElementById('impNoStock')&&document.getElementById('impNoStock').value==='9999');
   rows.forEach(raw=>{
     const r=bkMapRow(key,raw);
     if(key==='products'){
       const name=String(r.name||'').trim();
       if(!name)return;
-      const hit=list.find(p=>p.name===name||(r.barcode&&p.barcode===r.barcode));
-      const data={name,barcode:String(r.barcode||''),cat:String(r.cat||'未分类'),
-        price:num(r.price),cost:num(r.cost),stock:parseInt(num(r.stock)),
-        safe:parseInt(num(r.safe)),unit:String(r.unit||'件'),emoji:String(r.emoji||'')};
-      if(hit){Object.assign(hit,data);stat.skip++;}
-      else{list.push(Object.assign({id:uid()},data));stat.add++;}
+      const bc=has(r,'barcode')?String(r.barcode).trim():'';
+      const sku=has(r,'sku')?String(r.sku).trim():'';
+      const cat=has(r,'cat')?String(r.cat).trim():'';
+      const spec=has(r,'spec')?String(r.spec).trim():'';
+      /* 匹配优先级：商品编号 → 条码 → 名称+分类+规格
+         彩妆/美发类目里「高端」「中端」「普通」会按分类各来一条（高端·离子烫 / 高端·顺直 / 高端·潮色…），
+         只用名称去重会把 43 条塌成 23 条，必须把分类/规格带进身份里。
+         来源既没有分类也没有规格时（只有「名称/售价/库存」的极简 CSV），才退回按名称匹配。 */
+      const hasCatSpec=!!(cat||spec);
+      const hit=(sku?list.find(p=>String(p.sku||'').trim()===sku):null)
+        ||(bc?list.find(p=>String(p.barcode||'').trim()===bc):null)
+        ||(hasCatSpec?list.find(p=>String(p.name||'').trim()===name
+            &&String(p.cat||'').trim()===cat
+            &&String(p.spec||'').trim()===spec):null)
+        ||(!hasCatSpec?list.find(p=>String(p.name||'').trim()===name):null);
+      /* 只写「来源确实提供了」的字段，避免空列把已有数据抹掉 */
+      const data={name};
+      if(bc)data.barcode=bc;
+      if(has(r,'cat'))data.cat=String(r.cat).trim();
+      if(has(r,'price'))data.price=num(r.price);
+      if(has(r,'cost'))data.cost=num(r.cost);
+      if(has(r,'stock'))data.stock=parseInt(num(r.stock),10);
+      if(has(r,'safe'))data.safe=parseInt(num(r.safe),10);
+      if(has(r,'unit'))data.unit=String(r.unit).trim();
+      if(has(r,'emoji'))data.emoji=String(r.emoji).trim();
+      if(has(r,'sku'))data.sku=String(r.sku).trim();
+      if(has(r,'shortCode'))data.shortCode=String(r.shortCode).trim();
+      if(has(r,'spec'))data.spec=String(r.spec).trim();
+      if(has(r,'memberPrice'))data.memberPrice=num(r.memberPrice);
+      if(has(r,'ptype'))data.ptype=String(r.ptype).trim();
+      if(has(r,'brand'))data.brand=String(r.brand).trim();
+      if(has(r,'note'))data.note=String(r.note).trim();
+      if(has(r,'createdAt'))data.createdAt=String(r.createdAt).trim();
+      if(hit){
+        Object.assign(hit,data);stat.skip++;
+      }else{
+        // 新商品：补齐默认值；来源没有库存列时按用户选择（默认不限库存，否则会「缺货」卖不出去）
+        list.push(Object.assign({id:uid(),barcode:'',cat:'未分类',price:0,cost:0,
+          stock:noStock?9999:0,safe:0,unit:'件',emoji:''},data));
+        stat.add++;
+      }
     }else if(key==='members'){
       const phone=String(r.phone||'').replace(/\D/g,'');
       const no=String(r.no||'').trim();
@@ -2993,7 +3505,346 @@ function initUI(){
   renderProducts();renderCart();fillMemberSelect();updateHoldBadge();applyDiscountPermission();
   if(requireLogin())openLoginGate();
 }
-load();initUI();
+/* ==================================================================
+   账号登录与多端同步
+   ------------------------------------------------------------------
+   后端是安装包里的 sync-server（零依赖 Node 程序，数据存本机 db.json）。
+   所有端登录同一个账号 → 商品 / 会员 / 订单 在所有设备之间保持一致。
+   · 整店数据（店铺设置、商品、会员、库存流水、短信、交班、挂单）走 /api/shop，
+     用 rev 版本号做乐观并发；拉取时「本机优先合并」，本机独有的记录不会丢。
+   · 订单走 /api/orders 增量通道（按 order_uid 幂等 upsert），不参与整店覆盖。
+   ================================================================== */
+const SYNC_KEY='pos_sync_v1';
+const SYNC_DEF={base:'',token:'',email:'',userId:'',shopRev:0,orderRev:0,lastSync:null,auto:true,pushed:[]};
+let SYNC=Object.assign({},SYNC_DEF);
+let _syncTimer=null,_syncing=false,_syncErr='';
+
+const SYNC_DEVICE=(function(){
+  let d='';
+  try{d=localStorage.getItem('pos_device_id')||'';}catch(e){}
+  if(!d){d=uid();try{localStorage.setItem('pos_device_id',d);}catch(e){}}
+  const ua=navigator.userAgent||'';
+  const plat=/iPhone|iPad|iPod/i.test(ua)?'iPhone/iPad'
+    :/Android/i.test(ua)?'安卓'
+    :/Macintosh|Mac OS X/i.test(ua)?'Mac'
+    :/Windows/i.test(ua)?'Windows'
+    :/Linux/i.test(ua)?'Linux':'设备';
+  return plat+'·'+d.slice(-4);
+})();
+
+function syncBaseDefault(){
+  const h=(location&&location.hostname)||'';
+  const lan=h&&!/^(localhost|127\.0\.0\.1)$/i.test(h)?h:null;
+  return 'http://'+(lan||'localhost')+':8787';
+}
+function syncLoad(){
+  try{const r=localStorage.getItem(SYNC_KEY);if(r)SYNC=Object.assign({},SYNC_DEF,JSON.parse(r));}catch(e){}
+  if(!Array.isArray(SYNC.pushed))SYNC.pushed=[];
+  if(SYNC.auto===undefined)SYNC.auto=true;
+  if(!SYNC.base)SYNC.base=syncBaseDefault();
+}
+function syncPersist(){try{localStorage.setItem(SYNC_KEY,JSON.stringify(SYNC));}catch(e){}}
+/* 只写本地，不触发回推（避免同步过程自己把自己再排一次队） */
+function syncSaveLocal(){try{localStorage.setItem(KEY,JSON.stringify(S));}catch(e){}}
+function fmtShortTime(iso){
+  try{const d=new Date(iso);if(isNaN(d.getTime()))return String(iso);
+    const p=n=>String(n).padStart(2,'0');
+    return (d.getMonth()+1)+'-'+p(d.getDate())+' '+p(d.getHours())+':'+p(d.getMinutes());
+  }catch(e){return String(iso);}
+}
+function syncInput(id){const el=document.getElementById(id);return el?String(el.value||'').trim():'';}
+
+/* ---------------------------------------------------------- 网络 */
+async function syncReq(method,p,body){
+  const base=String(SYNC.base||'').replace(/\/+$/,'');
+  if(!base)throw new Error('请先填写同步服务器地址');
+  const url=base+p;
+  const opt={method,headers:{}};
+  if(SYNC.token)opt.headers.Authorization='Bearer '+SYNC.token;
+  if(body!==undefined){opt.headers['Content-Type']='application/json';opt.body=JSON.stringify(body);}
+  let res;
+  try{res=await fetch(url,opt);}
+  catch(e){throw new Error('连不上同步服务器（'+base+'）。请确认服务器已启动，且本机与服务器在同一个网络。');}
+  let data=null;
+  try{data=await res.json();}catch(e){}
+  if(!res.ok){
+    const err=new Error((data&&data.error)||('服务器返回 HTTP '+res.status));
+    err.status=res.status;err.data=data;
+    if(res.status===401&&SYNC.token){SYNC.token='';SYNC.email='';SYNC.userId='';syncPersist();renderSyncBox();}
+    throw err;
+  }
+  return data||{};
+}
+
+/* ------------------------------------------------- 合并（本机优先） */
+/* 远端独有的记录追加进来；两边都有的记录保留本机版本，不会把本机改动抹掉 */
+function syncUnion(local,remote,keyFn){
+  const out=Array.isArray(local)?local.slice():[];
+  const seen=new Set(out.map(x=>keyFn(x)));
+  let added=0;
+  (Array.isArray(remote)?remote:[]).forEach(r=>{
+    if(!r||typeof r!=='object')return;
+    let k;try{k=keyFn(r);}catch(e){k=null;}
+    if(k===undefined||k===null||k==='')return;
+    if(seen.has(k))return;
+    out.push(r);seen.add(k);added++;
+  });
+  return {list:out,added};
+}
+/* 只补本机缺的字段，本机已有值保持不变 */
+function syncDeepFill(local,remote){
+  if(local===undefined||local===null)return remote;
+  if(remote===undefined||remote===null)return local;
+  if(Array.isArray(local))return local.length?local:remote;
+  if(Array.isArray(remote))return local;
+  if(typeof local!=='object'||typeof remote!=='object')return local;
+  const out=Object.assign({},remote,local);
+  Object.keys(remote).forEach(k=>{
+    if(local[k]!==undefined&&local[k]!==null&&typeof local[k]==='object'
+      &&typeof remote[k]==='object'&&!Array.isArray(local[k])&&!Array.isArray(remote[k])){
+      out[k]=syncDeepFill(local[k],remote[k]);
+    }
+  });
+  return out;
+}
+const SYNC_ARRAYS=[
+  ['products',o=>String(o.id||o.sku||(String(o.name||'')+'|'+String(o.cat||'')+'|'+String(o.spec||'')))],
+  ['members',o=>String(o.id||o.phone||o.no||o.name||'')],
+  ['stockLog',o=>String(o.id||(String(o.time||'')+'|'+String(o.name||'')+'|'+String(o.qty||'')))],
+  ['smsLog',o=>String(o.id||(String(o.time||'')+'|'+String(o.phone||'')))],
+  ['shifts',o=>String(o.id||o.time||'')],
+  ['holds',o=>String(o.id||'')]
+];
+function syncMergePayload(p){
+  let changed=false;
+  if(p&&typeof p.shop==='object'&&p.shop){
+    const before=JSON.stringify(S.shop);
+    S.shop=syncDeepFill(S.shop,p.shop);
+    if(JSON.stringify(S.shop)!==before)changed=true;
+  }
+  SYNC_ARRAYS.forEach(([k,f])=>{
+    if(!p||!Array.isArray(p[k]))return;
+    const r=syncUnion(S[k]||[],p[k],f);
+    if(r.added){S[k]=r.list;changed=true;}
+  });
+  if(p&&Number(p.cardSeq||0)>Number(S.cardSeq||0)){S.cardSeq=Number(p.cardSeq);changed=true;}
+  if(p&&Number(p.seq||0)>Number(S.seq||0)){S.seq=Number(p.seq);changed=true;}
+  return {changed};
+}
+/* 上推的整店数据（订单单独走增量通道，避免整店覆盖把别端新订单冲掉） */
+function syncShopPayload(){
+  return JSON.parse(JSON.stringify({
+    shop:S.shop,products:S.products,members:S.members,stockLog:S.stockLog,
+    smsLog:S.smsLog,shifts:S.shifts,holds:S.holds,cardSeq:S.cardSeq,seq:S.seq,
+    device:SYNC_DEVICE,updatedAt:new Date().toISOString()
+  }));
+}
+async function syncPushOrders(){
+  const pushed=new Set(SYNC.pushed||[]);
+  const upserts=(S.orders||[]).filter(o=>o&&o.id&&!pushed.has(o.id))
+    .map(o=>({order_uid:o.id,payload:o,deleted:false,clientUpdatedAt:o.time||null}));
+  if(!upserts.length)return 0;
+  await syncReq('PUT','/api/orders',{upserts});
+  upserts.forEach(u=>pushed.add(u.order_uid));
+  SYNC.pushed=[...pushed].slice(-8000);
+  return upserts.length;
+}
+async function syncPullOrders(){
+  const since=Number(SYNC.orderRev||0);
+  const res=await syncReq('GET','/api/orders?since='+since);
+  const list=Array.isArray(res.orders)?res.orders:[];
+  let added=0;
+  list.forEach(rec=>{
+    if(!rec||!rec.order_uid)return;
+    const hit=(S.orders||[]).find(o=>o.id===rec.order_uid);
+    if(rec.deleted){if(hit)S.orders=S.orders.filter(o=>o.id!==rec.order_uid);return;}
+    if(hit){if(rec.payload&&rec.payload.refunded)hit.refunded=true;return;}
+    if(rec.payload){S.orders.push(rec.payload);added++;}
+  });
+  SYNC.orderRev=Math.max(since,Number(res.rev||since));
+  return added;
+}
+function syncRepaint(){
+  try{renderProducts();renderCart();fillMemberSelect();updateHoldBadge();}catch(e){}
+  try{renderProductTable();}catch(e){}
+  try{renderOrders();}catch(e){}
+  try{renderMembers();}catch(e){}
+  try{renderStockLog();}catch(e){}
+  try{renderSmsLog();}catch(e){}
+  try{renderHolds();}catch(e){}
+  try{renderReports();}catch(e){}
+  try{renderHeader();}catch(e){}
+}
+
+/* ---------------------------------------------------------- 主流程 */
+async function syncNow(opts){
+  opts=opts||{};
+  if(!SYNC.token){if(!opts.silent){toast('请先登录账号');renderSyncBox();}return;}
+  if(_syncing)return;
+  if(navigator.onLine===false&&!opts.silent){toast('当前没有网络，联网后再同步');return;}
+  _syncing=true;_syncErr='';renderSyncBox();
+  let ok=false;
+  try{
+    const me=await syncReq('GET','/api/me');
+    let serverRev=Number((me.shop&&me.shop.rev)||0);
+    let merged=false;
+    if(serverRev>0){
+      const remote=await syncReq('GET','/api/shop');
+      if(remote&&remote.payload){
+        // 云端已有数据：先合并（本机优先），再整体推上去
+        merged=syncMergePayload(remote.payload).changed;
+      }
+    }
+    let put=null;
+    try{
+      put=await syncReq('PUT','/api/shop',{rev:serverRev,payload:syncShopPayload()});
+    }catch(e){
+      if(e.status===409&&e.data&&e.data.server){
+        // 拉取与推送之间别的端又写了：合并一次再推
+        syncMergePayload(e.data.server.payload);
+        merged=true;
+        serverRev=Number(e.data.server.rev||serverRev);
+        put=await syncReq('PUT','/api/shop',{rev:serverRev,payload:syncShopPayload()});
+      }else{throw e;}
+    }
+    SYNC.shopRev=Number((put&&put.rev)||serverRev);
+    const upOrders=await syncPushOrders();
+    const downOrders=await syncPullOrders();
+    if(upOrders||downOrders)merged=true;
+    SYNC.lastSync=new Date().toISOString();
+    SYNC.deviceTag=SYNC_DEVICE;
+    ok=true;
+    if(merged){normalize();syncSaveLocal();syncRepaint();}
+  }catch(e){
+    _syncErr=String((e&&e.message)||e);
+    if(!opts.silent)toast('同步失败：'+_syncErr);
+  }finally{
+    _syncing=false;syncPersist();renderSyncBox();
+    if(ok&&!opts.silent)toast('同步完成');
+  }
+}
+/* 数据一改就排一次同步（防抖），避免每次点按都打网络 */
+function syncTouch(){
+  if(_syncing)return;
+  if(!SYNC.token||!SYNC.auto)return;
+  if(_syncTimer)clearTimeout(_syncTimer);
+  _syncTimer=setTimeout(()=>{_syncTimer=null;syncNow({silent:true});},4000);
+}
+
+/* ---------------------------------------------------------- 登录 */
+function syncAdoptAuth(d,email){
+  SYNC.token=(d&&d.token)||'';
+  SYNC.email=(d&&d.user&&d.user.email)||email||'';
+  SYNC.userId=(d&&d.user&&d.user.id)||'';
+  SYNC.shopRev=0;SYNC.orderRev=0;SYNC.pushed=[];SYNC.lastSync=null;
+  syncPersist();
+}
+function syncReadBase(){
+  const v=syncInput('syncBase');
+  if(v)SYNC.base=v;
+  syncPersist();
+  return SYNC.base;
+}
+function syncSetBase(){
+  syncReadBase();
+  toast('服务器地址已保存：'+SYNC.base);
+  renderSyncBox();
+}
+function syncSetAuto(v){SYNC.auto=!!v;syncPersist();if(SYNC.auto&&SYNC.token)syncNow({silent:true});}
+async function syncTest(){
+  try{
+    syncReadBase();
+    const d=await syncReq('GET','/health');
+    _syncErr='';toast('服务器连接正常（已注册 '+(d.users||0)+' 个账号）');
+  }catch(e){_syncErr=e.message;toast(e.message);}
+  renderSyncBox();
+}
+async function syncRegister(){
+  try{
+    syncReadBase();
+    const email=syncInput('syncEmail'),pass=syncInput('syncPass');
+    if(!email||!pass){toast('请填写邮箱和密码');return;}
+    const d=await syncReq('POST','/api/register',{email:email,password:pass,shopName:S.shop.name});
+    syncAdoptAuth(d,email);
+    toast('注册成功，正在上传本机数据…');
+    await syncNow({silent:true});
+  }catch(e){_syncErr=e.message;toast(e.message);renderSyncBox();}
+}
+async function syncLogin(){
+  try{
+    syncReadBase();
+    const email=syncInput('syncEmail'),pass=syncInput('syncPass');
+    if(!email||!pass){toast('请填写邮箱和密码');return;}
+    const d=await syncReq('POST','/api/login',{email:email,password:pass});
+    syncAdoptAuth(d,email);
+    toast('登录成功，正在同步…');
+    await syncNow({silent:true});
+  }catch(e){_syncErr=e.message;toast(e.message);renderSyncBox();}
+}
+async function syncLogout(){
+  if(!confirm('退出登录后本机不再自动同步（本机数据会保留）。确定退出？'))return;
+  try{await syncReq('POST','/api/logout');}catch(e){}
+  SYNC.token='';SYNC.email='';SYNC.userId='';
+  SYNC.shopRev=0;SYNC.orderRev=0;SYNC.pushed=[];SYNC.lastSync=null;_syncErr='';
+  syncPersist();renderSyncBox();toast('已退出登录');
+}
+function renderSyncBox(){
+  const box=document.getElementById('syncBox');
+  if(!box)return;
+  const esc=escapeHtml;
+  if(SYNC.token){
+    const st=_syncing?'同步中…':(_syncErr?'同步失败':(SYNC.lastSync?'已同步':'尚未同步'));
+    const color=_syncErr?'color:var(--danger)':(_syncing?'':'color:var(--ok)');
+    box.innerHTML=
+      '<div class="row" style="flex-wrap:wrap;gap:8px;align-items:center;margin:8px 0">'
+      +'<span class="pill">已登录 <b>'+esc(SYNC.email)+'</b></span>'
+      +'<span class="pill">本机 '+esc(SYNC_DEVICE)+'</span>'
+      +'<span class="pill" style="'+color+'">'+esc(st)+'</span>'
+      +(SYNC.lastSync?('<span class="pill">上次 '+esc(fmtShortTime(SYNC.lastSync))+'</span>'):'')
+      +'</div>'
+      +(_syncErr?('<p class="cfg-help" style="color:var(--danger)">'+esc(_syncErr)+'</p>'):'')
+      +'<div class="row" style="margin:10px 0;gap:8px;flex-wrap:wrap">'
+      +'<button class="primary" onclick="syncNow()">立即同步</button>'
+      +'<button class="ghost" onclick="syncTest()">测试连接</button>'
+      +'<button class="ghost" onclick="syncLogout()">退出登录</button>'
+      +'</div>'
+      +'<div class="row" style="gap:8px;align-items:flex-end">'
+      +'<div class="field" style="flex:1"><label>同步服务器地址</label>'
+      +'<input id="syncBase" value="'+esc(SYNC.base)+'" placeholder="http://192.168.1.5:8787"></div>'
+      +'<button class="ghost" onclick="syncSetBase()">保存地址</button></div>'
+      +'<div class="switch-row"><input type="checkbox" id="syncAuto" '+(SYNC.auto?'checked':'')
+      +' onchange="syncSetAuto(this.checked)"> 改动后自动同步（推荐）</div>'
+      +'<p class="cfg-help">换手机、换电脑后，填<b>同一个服务器地址</b>并登录<b>同一个账号</b>，'
+      +'商品、会员、订单就会自动对齐。订单按「只增不改」的增量方式同步，不会互相覆盖。</p>';
+  }else{
+    box.innerHTML=
+      '<p class="pill">登录后，本店的商品、会员、订单会在所有设备之间自动同步。'
+      +'没登录也可以正常收银，数据只存在本机。</p>'
+      +'<div class="field"><label>同步服务器地址</label>'
+      +'<input id="syncBase" value="'+esc(SYNC.base)+'" placeholder="http://192.168.1.5:8787"></div>'
+      +'<p class="cfg-help">服务器程序在安装包的 <code class="inline">sync-server</code> 文件夹里：'
+      +'在一台电脑上双击「启动同步服务器」，窗口里会显示局域网地址；'
+      +'手机、其他电脑连同一个 WiFi 后填那个地址即可。</p>'
+      +'<div class="row">'
+      +'<div class="field" style="flex:1"><label>邮箱</label><input id="syncEmail" type="email" placeholder="you@example.com"></div>'
+      +'<div class="field" style="flex:1"><label>密码（至少 6 位）</label><input id="syncPass" type="password" placeholder="••••••"></div>'
+      +'</div>'
+      +'<div class="row" style="gap:8px;flex-wrap:wrap">'
+      +'<button class="primary" onclick="syncRegister()">注册并登录</button>'
+      +'<button class="ghost" onclick="syncLogin()">已有账号，登录</button>'
+      +'<button class="ghost" onclick="syncTest()">测试连接</button>'
+      +'</div>'
+      +(_syncErr?('<p class="cfg-help" style="color:var(--danger)">'+esc(_syncErr)+'</p>'):'');
+  }
+}
+function syncBoot(){
+  syncLoad();
+  renderSyncBox();
+  window.addEventListener('online',()=>{if(SYNC.token&&SYNC.auto)syncNow({silent:true});});
+  if(SYNC.token&&SYNC.auto)setTimeout(()=>syncNow({silent:true}),1500);
+}
+
+load();initUI();syncBoot();
 </script>
 </body>
 </html>
