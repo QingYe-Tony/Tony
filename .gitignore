@@ -10,9 +10,11 @@ builder-debug.yml
 # 本地打包产物（自行安装用，不入库）
 dist-android/
 dist-desktop/
+dist-ios/
 *.apk
 *.exe
 *.dmg
+*.ipa
 *.AppImage
 *.deb
 *.blockmap
