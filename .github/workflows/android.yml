@@ -23,10 +23,21 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      - uses: android-actions/setup-android@v3
-
-      - name: 安装 Android SDK 组件
-        run: sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0"
+      - name: 准备 Android SDK（使用 runner 预装的 SDK）
+        shell: bash
+        run: |
+          set -e
+          SDK="${ANDROID_SDK_ROOT:-$ANDROID_HOME}"
+          echo "SDK 目录: $SDK"
+          if [ -z "$SDK" ] || [ ! -d "$SDK" ]; then echo "未找到预装 Android SDK"; exit 1; fi
+          SDKMGR_BIN="$(ls -d "$SDK"/cmdline-tools/*/bin 2>/dev/null | head -1 || true)"
+          [ -n "$SDKMGR_BIN" ] && export PATH="$SDKMGR_BIN:$PATH"
+          export PATH="$SDK/platform-tools:$PATH"
+          echo "sdkmanager: $(command -v sdkmanager || echo NOT_FOUND)"
+          yes | sdkmanager --licenses >/dev/null 2>&1 || true
+          sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0"
+          echo "ANDROID_HOME=$SDK" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$SDK" >> "$GITHUB_ENV"
 
       - name: 安装依赖
         run: npm ci
