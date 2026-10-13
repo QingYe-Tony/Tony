@@ -1,6 +1,4 @@
-; installer.nsh —— 让 Windows 安装包（NSIS）支持简体中文界面
-; electron-builder 会把本文件插入到生成的 NSIS 脚本中（MUI 已初始化），
-; 通过再注册一种语言即可让简体中文系统的用户看到中文向导。
-; 配合 package.json 中 nsis.displayLanguageSelector=true，可在多语言环境下手动选择。
-
-!insertmacro MUI_LANGUAGE "SimpChinese"
+; installer.nsh —— 由 electron-builder 插入到生成的 NSIS 脚本中（MUI 已初始化）。
+; 简体中文界面由 package.json 的 nsis.language="zh_CN" 驱动（electron-builder
+; 会自行插入 MUI_LANGUAGE "SimpChinese" 并使用其内置中文翻译），因此此处不再重复插入。
+; 如需额外自定义安装行为，可在此追加 NSIS 指令。

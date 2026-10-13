@@ -60,17 +60,8 @@
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
       "displayLanguageSelector": true,
-      "include": "installer.nsh",
-      "messages": {
-        "oneClick": "一键安装到默认文件夹",
-        "perMachine": "为所有用户安装",
-        "associateFile": "关联文件类型",
-        "displayLanguageSelector": "选择安装语言",
-        "createDesktopShortcut": "创建桌面快捷方式",
-        "createStartMenuShortcut": "创建开始菜单快捷方式",
-        "runAfterFinish": "安装完成后立即运行",
-        "allowToChangeInstallationDirectory": "选择安装位置"
-      }
+      "language": "zh_CN",
+      "include": "installer.nsh"
     }
   },
   "dependencies": {
