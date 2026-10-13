@@ -1,0 +1,48 @@
+name: Build POS Desktop App
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            platform: mac
+          - os: windows-latest
+            platform: win
+          - os: ubuntu-latest
+            platform: linux
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: 生成图标（Linux/Windows 需先装依赖，这里复用仓库内已提交的 build/icon.*）
+        shell: bash
+        run: |
+          if [ ! -f build/icon.ico ] || [ ! -f build/icon.icns ] || [ ! -f build/icon.png ]; then
+            echo "缺少图标，请在 macOS 本地执行 npm run icons 后提交 build/ 目录"
+            exit 1
+          fi
+
+      - name: 安装依赖
+        run: npm ci
+
+      - name: 构建（当前平台）
+        run: npm run dist
+
+      - name: 上传产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: pos-${{ matrix.platform }}
+          path: dist/*
+          if-no-files-found: ignore

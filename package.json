@@ -1,0 +1,83 @@
+{
+  "name": "merchant-pos",
+  "version": "1.0.0",
+  "description": "跨平台商户收银系统（桌面版，基于 Electron 打包）",
+  "main": "main.js",
+  "author": "WorkBuddy",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "icons": "node icons.js",
+    "dist": "electron-builder",
+    "dist:mac": "electron-builder --mac",
+    "dist:linux": "electron-builder --linux",
+    "dist:win": "electron-builder --win"
+  },
+  "build": {
+    "appId": "com.workbuddy.pos",
+    "productName": "通用收银台",
+    "copyright": "Copyright © 2026 WorkBuddy",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "index.html",
+      "manifest.webmanifest",
+      "sw.js",
+      "icon.svg",
+      "main.js",
+      "preload.js"
+    ],
+    "icon": "build/icon",
+    "asar": true,
+    "publish": [
+      {
+        "provider": "generic",
+        "url": "https://REPLACE-THIS.example.com/releases/"
+      }
+    ],
+    "mac": {
+      "category": "public.app-category.business",
+      "target": ["dmg", "zip"],
+      "identity": null,
+      "hardenedRuntime": false
+    },
+    "win": {
+      "target": ["nsis", "portable"],
+      "icon": "build/icon.ico"
+    },
+    "linux": {
+      "target": ["AppImage", "deb"],
+      "category": "Office",
+      "icon": "build/icon.png",
+      "maintainer": "workbuddy",
+      "synopsis": "跨平台商户收银系统"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "displayLanguageSelector": true,
+      "include": "installer.nsh",
+      "messages": {
+        "oneClick": "一键安装到默认文件夹",
+        "perMachine": "为所有用户安装",
+        "associateFile": "关联文件类型",
+        "displayLanguageSelector": "选择安装语言",
+        "createDesktopShortcut": "创建桌面快捷方式",
+        "createStartMenuShortcut": "创建开始菜单快捷方式",
+        "runAfterFinish": "安装完成后立即运行",
+        "allowToChangeInstallationDirectory": "选择安装位置"
+      }
+    }
+  },
+  "dependencies": {
+    "electron-updater": "^6.3.9"
+  },
+  "devDependencies": {
+    "electron": "^31.3.0",
+    "electron-builder": "^24.13.3"
+  }
+}

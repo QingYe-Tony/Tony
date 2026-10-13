@@ -1,0 +1,8 @@
+node_modules/
+dist/
+.electron-cache/
+.electron-builder-cache/
+__pycache__/
+*.log
+.DS_Store
+builder-debug.yml

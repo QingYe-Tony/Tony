@@ -1,0 +1,936 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>通用商户收银系统（跨平台版）</title>
+<meta name="theme-color" content="#2563eb">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon.svg">
+<style>
+  :root{
+    --bg:#f4f6f8; --panel:#ffffff; --ink:#1f2933; --muted:#6b7785;
+    --line:#e3e8ee; --brand:#2563eb; --brand-d:#1d4ed8; --ok:#16a34a;
+    --warn:#d97706; --danger:#dc2626; --soft:#eef2ff; --radius:12px;
+    --shadow:0 1px 3px rgba(16,24,40,.08),0 1px 2px rgba(16,24,40,.06);
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+    background:var(--bg);color:var(--ink);font-size:14px;line-height:1.5}
+  button{font-family:inherit;cursor:pointer;border:none;border-radius:8px;padding:8px 14px;font-size:14px;background:var(--soft);color:var(--ink);transition:.15s}
+  button:hover{filter:brightness(.97)}
+  button:active{transform:translateY(1px)}
+  button.primary{background:var(--brand);color:#fff}
+  button.primary:hover{background:var(--brand-d)}
+  button.danger{background:#fee2e2;color:var(--danger)}
+  button.ghost{background:transparent;border:1px solid var(--line)}
+  input,select,textarea{font-family:inherit;font-size:14px;padding:8px 10px;border:1px solid var(--line);
+    border-radius:8px;background:#fff;color:var(--ink);width:100%}
+  input:focus,select:focus,textarea:focus{outline:none;border-color:var(--brand)}
+  .wrap{display:flex;flex-direction:column;height:100%}
+  header{display:flex;align-items:center;gap:14px;padding:10px 18px;background:var(--panel);
+    border-bottom:1px solid var(--line);box-shadow:var(--shadow);position:sticky;top:0;z-index:20}
+  .logo{width:34px;height:34px;border-radius:9px;background:linear-gradient(135deg,var(--brand),#7c3aed);
+    color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:18px}
+  .shop-name{font-weight:700;font-size:16px}
+  .shop-sub{font-size:12px;color:var(--muted)}
+  nav{display:flex;gap:4px;margin-left:auto;flex-wrap:wrap}
+  nav button{padding:7px 12px;background:transparent;color:var(--muted);font-weight:600}
+  nav button.active{background:var(--soft);color:var(--brand)}
+  main{flex:1;overflow:auto;padding:18px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow)}
+  .hidden{display:none!important}
+  .row{display:flex;gap:10px;flex-wrap:wrap}
+  .grid-products{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:10px}
+  .prod{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px;text-align:center;cursor:pointer;transition:.15s;user-select:none}
+  .prod:hover{border-color:var(--brand);transform:translateY(-2px)}
+  .prod .emoji{font-size:30px}
+  .prod .pn{font-weight:600;margin-top:4px;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .prod .pp{color:var(--brand);font-weight:700;margin-top:2px}
+  .prod .ps{color:var(--muted);font-size:11px}
+  .prod.out{opacity:.45}
+  .cat-chip{padding:6px 12px;border-radius:999px;background:var(--soft);color:var(--ink);font-weight:600;font-size:13px}
+  .cat-chip.active{background:var(--brand);color:#fff}
+  /* POS layout */
+  .pos{display:grid;grid-template-columns:1fr 360px;gap:14px;align-items:start}
+  @media(max-width:900px){.pos{grid-template-columns:1fr}}
+  .cart{position:sticky;top:70px}
+  .cart-list{max-height:42vh;overflow:auto}
+  .cart-item{display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--line)}
+  .cart-item .ci-name{flex:1;min-width:0}
+  .cart-item .ci-name .cn{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .cart-item .ci-name .cp{color:var(--muted);font-size:12px}
+  .qty{display:flex;align-items:center;gap:6px}
+  .qty button{width:28px;height:28px;padding:0;border-radius:6px;background:var(--soft);font-weight:700}
+  .qty span{min-width:24px;text-align:center;font-weight:700}
+  .summary{padding:12px;border-top:1px dashed var(--line);margin-top:8px}
+  .sum-row{display:flex;justify-content:space-between;padding:3px 0;color:var(--muted)}
+  .sum-row.total{font-size:20px;font-weight:800;color:var(--ink);border-top:1px solid var(--line);margin-top:6px;padding-top:8px}
+  .pay-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px}
+  .pay-grid button{padding:14px 0;font-weight:700;font-size:15px}
+  .pay-cash{background:#ecfdf5;color:var(--ok)}
+  .pay-wx{background:#e8f7ee;color:#07c160}
+  .pay-ali{background:#e9f3ff;color:#1677ff}
+  .pay-card{background:#f3e8ff;color:#7c3aed}
+  table{width:100%;border-collapse:collapse}
+  th,td{padding:9px 10px;text-align:left;border-bottom:1px solid var(--line);font-size:13px}
+  th{color:var(--muted);font-weight:600;background:#fafbfc}
+  tr:hover td{background:#fafbff}
+  .tag{display:inline-block;padding:2px 8px;border-radius:6px;font-size:12px;font-weight:600}
+  .tag.cash{background:#ecfdf5;color:var(--ok)}
+  .tag.wx{background:#e8f7ee;color:#07c160}
+  .tag.ali{background:#e9f3ff;color:#1677ff}
+  .tag.card{background:#f3e8ff;color:#7c3aed}
+  .tag.refund{background:#fee2e2;color:var(--danger)}
+  .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:16px}
+  .stat{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:14px;box-shadow:var(--shadow)}
+  .stat .sl{color:var(--muted);font-size:12px}
+  .stat .sv{font-size:24px;font-weight:800;margin-top:4px}
+  .stat .sv small{font-size:13px;color:var(--muted);font-weight:600}
+  .modal-bg{position:fixed;inset:0;background:rgba(15,23,42,.45);display:flex;align-items:center;justify-content:center;z-index:50;padding:16px}
+  .modal{background:#fff;border-radius:14px;width:min(520px,100%);max-height:90vh;overflow:auto;padding:18px;box-shadow:0 20px 60px rgba(0,0,0,.3)}
+  .modal h3{margin:0 0 12px}
+  .field{margin-bottom:12px}
+  .field label{display:block;font-size:12px;color:var(--muted);margin-bottom:4px;font-weight:600}
+  .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--ink);color:#fff;
+    padding:10px 18px;border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.25);z-index:80;opacity:0;transition:.25s;pointer-events:none}
+  .toast.show{opacity:1}
+  .toolbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px}
+  .toolbar .spacer{flex:1}
+  .empty{padding:40px;text-align:center;color:var(--muted)}
+  /* receipt print */
+  #receipt{display:none}
+  @media print{
+    body *{visibility:hidden}
+    #receipt,#receipt *{visibility:visible}
+    #receipt{display:block;position:absolute;left:0;top:0;width:300px;padding:10px;font-size:13px;color:#000}
+    #receipt h4{text-align:center;margin:0 0 6px}
+    #receipt .rl{display:flex;justify-content:space-between;padding:2px 0}
+    #receipt hr{border:none;border-top:1px dashed #000;margin:6px 0}
+  }
+  .scan-box{display:flex;gap:8px}
+  .pill{font-size:12px;color:var(--muted)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="logo" id="hdrLogo">收</div>
+    <div>
+      <div class="shop-name" id="hdrShop">商户收银系统</div>
+      <div class="shop-sub" id="hdrSub">跨平台 · 离线可用 · 数据本地存储</div>
+    </div>
+    <nav id="nav">
+      <button data-tab="pos" class="active">收银台</button>
+      <button data-tab="products">商品管理</button>
+      <button data-tab="orders">订单</button>
+      <button data-tab="reports">报表</button>
+      <button data-tab="members">会员</button>
+      <button data-tab="settings">设置</button>
+      <button onclick="openModal('helpModal')">帮助</button>
+    </nav>
+  </header>
+  <main>
+    <!-- 收银台 -->
+    <section id="tab-pos">
+      <div class="pos">
+        <div class="card" style="padding:14px">
+          <div class="scan-box" style="margin-bottom:10px">
+            <input id="barcodeInput" placeholder="扫码 / 输入条码后按回车加购" autocomplete="off">
+            <button class="ghost" onclick="addByBarcode()">加购</button>
+          </div>
+          <div class="toolbar">
+            <div class="scan-box" style="flex:1">
+              <input id="prodSearch" placeholder="搜索商品名称…" oninput="renderProducts()">
+            </div>
+          </div>
+          <div id="catChips" class="row" style="margin-bottom:10px"></div>
+          <div id="prodGrid" class="grid-products"></div>
+        </div>
+
+        <div class="card cart" style="padding:14px">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+            <strong>购物清单</strong>
+            <button class="ghost" onclick="clearCart()">清空</button>
+          </div>
+          <div id="cartList" class="cart-list"></div>
+          <div class="summary">
+            <div class="sum-row"><span>商品种类</span><span id="sumKinds">0</span></div>
+            <div class="sum-row"><span>商品数量</span><span id="sumQty">0</span></div>
+            <div class="sum-row"><span>小计</span><span id="sumSub">0.00</span></div>
+            <div class="sum-row"><span>整单优惠</span>
+              <span><input id="orderDiscount" type="number" min="0" step="0.01" style="width:90px;display:inline-block" placeholder="0" oninput="renderCart()"> 元</span>
+            </div>
+            <div class="sum-row total"><span>应付</span><span id="sumPay">0.00</span></div>
+
+            <div class="field" style="margin-top:10px">
+              <label>选择会员（积分 / 余额抵扣）</label>
+              <select id="cartMember" onchange="renderCart()"><option value="">散客（无会员）</option></select>
+            </div>
+
+            <div id="cashBox">
+              <div class="sum-row"><span>现金实收（仅现金支付时生效）</span>
+                <span><input id="cashReceived" type="number" min="0" step="0.01" style="width:100px;display:inline-block" placeholder="0" oninput="calcChange()"> 元</span>
+              </div>
+              <div class="sum-row"><span>找零</span><span id="cashChange" style="color:var(--ok);font-weight:700">0.00</span></div>
+            </div>
+
+            <div class="pay-grid">
+              <button class="pay-cash" onclick="checkout('cash')">现金</button>
+              <button class="pay-wx" onclick="checkout('wx')">微信</button>
+              <button class="pay-ali" onclick="checkout('ali')">支付宝</button>
+              <button class="pay-card" onclick="checkout('card')">银行卡</button>
+            </div>
+            <button class="ghost" style="width:100%;margin-top:8px" onclick="openMixModal()">组合支付 / 拆分收款 (F9)</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 商品管理 -->
+    <section id="tab-products" class="hidden">
+      <div class="toolbar">
+        <button class="primary" onclick="openProductModal()">+ 新增商品</button>
+        <button class="ghost" onclick="exportProducts()">导出商品</button>
+        <button class="ghost" onclick="document.getElementById('impProd').click()">导入商品</button>
+        <input id="impProd" type="file" accept=".json" class="hidden" onchange="importProducts(this)">
+        <div class="spacer"></div>
+        <input id="prodFilter" placeholder="筛选商品…" oninput="renderProductTable()" style="max-width:240px">
+      </div>
+      <div class="card" style="padding:6px">
+        <table>
+          <thead><tr><th>名称</th><th>条码</th><th>分类</th><th>单价</th><th>库存</th><th>单位</th><th style="text-align:right">操作</th></tr></thead>
+          <tbody id="prodTable"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- 订单 -->
+    <section id="tab-orders" class="hidden">
+      <div class="toolbar">
+        <input id="orderDate" type="date" onchange="renderOrders()">
+        <button class="ghost" onclick="document.getElementById('orderDate').value='';renderOrders()">全部日期</button>
+        <div class="spacer"></div>
+        <span class="pill" id="orderCount"></span>
+      </div>
+      <div class="card" style="padding:6px">
+        <table>
+          <thead><tr><th>单号</th><th>时间</th><th>商品</th><th>金额</th><th>支付方式</th><th>会员</th><th style="text-align:right">操作</th></tr></thead>
+          <tbody id="orderTable"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- 报表 -->
+    <section id="tab-reports" class="hidden">
+      <div class="toolbar">
+        <span>统计周期：</span>
+        <input id="repFrom" type="date" onchange="renderReports()">
+        <span>至</span>
+        <input id="repTo" type="date" onchange="renderReports()">
+        <button class="ghost" onclick="clearRepDates()">清空</button>
+      </div>
+      <div class="card" style="padding:14px;margin-bottom:14px">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">
+          <div><strong>本班交班</strong><div class="pill" id="shiftSince"></div></div>
+          <button class="primary" onclick="doShift()">交班结算并打单</button>
+        </div>
+        <div id="shiftSummary" style="margin-top:10px"></div>
+      </div>
+      <div id="reportBody"></div>
+      <div class="card" style="padding:14px;margin-top:14px">
+        <h3 style="margin-top:0">交班记录</h3>
+        <table>
+          <thead><tr><th>交班单号</th><th>交班时间</th><th>笔数</th><th>营收</th><th>现金</th><th>微信</th><th>支付宝</th><th>银行卡</th></tr></thead>
+          <tbody id="shiftTable"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- 会员 -->
+    <section id="tab-members" class="hidden">
+      <div class="toolbar">
+        <button class="primary" onclick="openMemberModal()">+ 新增会员</button>
+        <div class="spacer"></div>
+        <input id="memFilter" placeholder="搜索会员/手机号…" oninput="renderMembers()" style="max-width:240px">
+      </div>
+      <div class="card" style="padding:6px">
+        <table>
+          <thead><tr><th>姓名</th><th>手机号</th><th>积分</th><th>余额</th><th style="text-align:right">操作</th></tr></thead>
+          <tbody id="memTable"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- 设置 -->
+    <section id="tab-settings" class="hidden">
+      <div class="card" style="padding:16px;max-width:640px">
+        <h3 style="margin-top:0">店铺设置</h3>
+        <div class="field"><label>店铺名称</label><input id="setName" oninput="saveSettings()"></div>
+        <div class="field"><label>店铺Logo（显示在收银台与小票）</label>
+          <input id="setLogo" type="file" accept="image/*" onchange="setLogoFromFile(this)">
+          <div id="logoPreview" style="margin-top:6px"></div>
+        </div>
+        <div class="row">
+          <div class="field" style="flex:1"><label>货币符号</label><input id="setCur" value="¥" oninput="saveSettings()"></div>
+          <div class="field" style="flex:1"><label>税率 %（小计外附加）</label><input id="setTax" type="number" min="0" step="0.01" value="0" oninput="saveSettings()"></div>
+        </div>
+        <hr style="border:none;border-top:1px solid var(--line);margin:14px 0">
+        <h3>数据备份与恢复</h3>
+        <p class="pill">所有数据保存在本机浏览器本地存储中。建议定期导出备份，换设备或清缓存前务必导出。</p>
+        <div class="row" style="margin:10px 0">
+          <button class="ghost" onclick="exportAll()">导出全部数据 (JSON)</button>
+          <button class="ghost" onclick="document.getElementById('impAll').click()">导入备份</button>
+          <input id="impAll" type="file" accept=".json" class="hidden" onchange="importAll(this)">
+        </div>
+        <div class="row" style="margin:10px 0">
+          <button class="ghost" onclick="loadDemo()">载入演示数据</button>
+          <button class="danger" onclick="wipeData()">清空全部数据</button>
+        </div>
+        <hr style="border:none;border-top:1px solid var(--line);margin:14px 0">
+        <h3>关于 / 更新</h3>
+        <p class="pill" id="verText"></p>
+        <button class="ghost" onclick="checkUpdates()">检查更新</button>
+        <p class="pill" style="margin-top:6px">更新须在「设置 → publish」配置发布地址后生效（见使用手册）。</p>
+      </div>
+    </section>
+  </main>
+</div>
+
+<!-- 商品编辑弹窗 -->
+<div id="prodModal" class="modal-bg hidden">
+  <div class="modal">
+    <h3 id="prodModalTitle">新增商品</h3>
+    <input id="pId" type="hidden">
+    <div class="field"><label>商品名称 *</label><input id="pName"></div>
+    <div class="row">
+      <div class="field" style="flex:1"><label>条码</label><input id="pBarcode" placeholder="可留空"></div>
+      <div class="field" style="flex:1"><label>分类</label><input id="pCat" placeholder="如：饮料"></div>
+    </div>
+    <div class="row">
+      <div class="field" style="flex:1"><label>单价 *</label><input id="pPrice" type="number" min="0" step="0.01"></div>
+      <div class="field" style="flex:1"><label>库存</label><input id="pStock" type="number" min="0" step="1" value="0"></div>
+      <div class="field" style="flex:1"><label>单位</label><input id="pUnit" value="件"></div>
+    </div>
+    <div class="field"><label>图标 (emoji)</label><input id="pEmoji" placeholder="如：🥤" maxlength="4"></div>
+    <div class="row" style="justify-content:flex-end;margin-top:8px">
+      <button class="ghost" onclick="closeModal('prodModal')">取消</button>
+      <button class="primary" onclick="saveProduct()">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- 会员编辑弹窗 -->
+<div id="memModal" class="modal-bg hidden">
+  <div class="modal">
+    <h3 id="memModalTitle">新增会员</h3>
+    <input id="mId" type="hidden">
+    <div class="field"><label>姓名 *</label><input id="mName"></div>
+    <div class="field"><label>手机号</label><input id="mPhone"></div>
+    <div class="row">
+      <div class="field" style="flex:1"><label>初始积分</label><input id="mPoints" type="number" min="0" value="0"></div>
+      <div class="field" style="flex:1"><label>初始余额</label><input id="mBalance" type="number" min="0" step="0.01" value="0"></div>
+    </div>
+    <div class="row" style="justify-content:flex-end;margin-top:8px">
+      <button class="ghost" onclick="closeModal('memModal')">取消</button>
+      <button class="primary" onclick="saveMember()">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- 充值弹窗 -->
+<div id="topupModal" class="modal-bg hidden">
+  <div class="modal">
+    <h3>会员充值 / 扣减</h3>
+    <p id="topupName" class="pill"></p>
+    <div class="field"><label>金额（正数为充值，负数为扣减）</label><input id="topupAmt" type="number" step="0.01"></div>
+    <div class="row" style="justify-content:flex-end;margin-top:8px">
+      <button class="ghost" onclick="closeModal('topupModal')">取消</button>
+      <button class="primary" onclick="doTopup()">确认</button>
+    </div>
+  </div>
+</div>
+
+<!-- 订单详情弹窗 -->
+<div id="orderModal" class="modal-bg hidden">
+  <div class="modal">
+    <h3>订单详情</h3>
+    <div id="orderDetail"></div>
+    <div class="row" style="justify-content:flex-end;margin-top:12px">
+      <button class="ghost" onclick="closeModal('orderModal')">关闭</button>
+      <button class="ghost" onclick="printOrder()">打印小票</button>
+      <button id="refundBtn" class="danger" onclick="refundOrder()">退款 / 作废</button>
+    </div>
+  </div>
+</div>
+
+<!-- 组合支付弹窗 -->
+<div id="mixModal" class="modal-bg hidden">
+  <div class="modal">
+    <h3>组合支付</h3>
+    <p class="pill">应付合计：<span id="mixTotal"></span></p>
+    <div class="field"><label>现金</label><input id="mixCash" type="number" min="0" step="0.01" oninput="mixCalc()"></div>
+    <div class="field"><label>微信</label><input id="mixWx" type="number" min="0" step="0.01" oninput="mixCalc()"></div>
+    <div class="field"><label>支付宝</label><input id="mixAli" type="number" min="0" step="0.01" oninput="mixCalc()"></div>
+    <div class="field"><label>银行卡</label><input id="mixCard" type="number" min="0" step="0.01" oninput="mixCalc()"></div>
+    <div class="sum-row"><span>已收 / 应付</span><span><span id="mixPaid">0.00</span> / <span id="mixNeed">0.00</span></span></div>
+    <div class="row" style="justify-content:flex-end;margin-top:8px">
+      <button class="ghost" onclick="closeModal('mixModal')">取消</button>
+      <button class="primary" onclick="confirmMix()">确认收款</button>
+    </div>
+  </div>
+</div>
+
+<!-- 帮助 -->
+<div id="helpModal" class="modal-bg hidden">
+  <div class="modal">
+    <h3>使用帮助</h3>
+    <div style="max-height:60vh;overflow:auto;font-size:13px;line-height:1.7">
+      <p><b>快速开始</b><br>1) 设置 → 填入店铺名称、上传 Logo、选好货币与税率。<br>2) 商品管理 → 新增商品（名称/条码/分类/单价/库存）。<br>3) 收银台 → 点商品或扫码加购 → 选支付方式 → 完成。</p>
+      <p><b>快捷键</b><br>收银台：F1 现金 / F2 微信 / F3 支付宝 / F4 银行卡 / F9 组合支付；扫码框输入条码按 Enter 加购。</p>
+      <p><b>会员</b>：会员消费累计积分，可用余额抵扣；设置页可充值。</p>
+      <p><b>交班</b>：报表页「交班结算并打单」汇总本班营收并留存记录。</p>
+      <p><b>数据备份</b>：设置 → 导出全部数据（换设备/清缓存前务必导出）；可导入恢复。</p>
+      <p><b>部署预置</b>：在程序目录放 <code>store.json</code>（<code>{"name":"店名","logo":"data:image/png;base64,..."}</code>）可一次性预置店铺名与 Logo。</p>
+      <p class="pill">完整图文手册见仓库内 <b>使用手册.md</b>。</p>
+    </div>
+    <div class="row" style="justify-content:flex-end;margin-top:10px">
+      <button class="primary" onclick="closeModal('helpModal')">知道了</button>
+    </div>
+  </div>
+</div>
+
+<!-- 小票（打印用） -->
+<div id="receipt"></div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+/* ============ 存储层 ============ */
+const KEY='pos_system_v1';
+let S={shop:{name:'我的店铺',currency:'¥',tax:0},products:[],members:[],orders:[],shifts:[],lastShift:null,seq:1};
+function load(){try{const r=localStorage.getItem(KEY);if(r)S=Object.assign(S,JSON.parse(r));}catch(e){}}
+function save(){try{localStorage.setItem(KEY,JSON.stringify(S));}catch(e){toast('本地存储失败，请使用导出备份');}}
+function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2,6);}
+function cur(){return S.shop.currency||'¥';}
+function money(n){return (S.shop.currency||'¥')+Number(n||0).toFixed(2);}
+function todayStr(){const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
+
+/* ============ 通用 UI ============ */
+let activeTab='pos';
+document.getElementById('nav').addEventListener('click',e=>{
+  if(e.target.dataset.tab){switchTab(e.target.dataset.tab);}
+});
+function switchTab(t){
+  activeTab=t;
+  document.querySelectorAll('#nav button').forEach(b=>b.classList.toggle('active',b.dataset.tab===t));
+  document.querySelectorAll('main section').forEach(s=>s.classList.add('hidden'));
+  document.getElementById('tab-'+t).classList.remove('hidden');
+  if(t==='pos'){renderProducts();renderCart();fillMemberSelect();}
+  if(t==='products')renderProductTable();
+  if(t==='orders')renderOrders();
+  if(t==='reports'){renderReports();renderShift();}
+  if(t==='members')renderMembers();
+  if(t==='settings'){document.getElementById('setName').value=S.shop.name;document.getElementById('setCur').value=S.shop.currency;document.getElementById('setTax').value=S.shop.tax;}
+}
+function toast(msg){const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove('show'),2200);}
+function openModal(id){document.getElementById(id).classList.remove('hidden');}
+function closeModal(id){document.getElementById(id).classList.add('hidden');}
+document.querySelectorAll('.modal-bg').forEach(bg=>bg.addEventListener('click',e=>{if(e.target===bg)bg.classList.add('hidden');}));
+
+/* ============ 商品 ============ */
+let curCat='全部';
+function renderProducts(){
+  const grid=document.getElementById('prodGrid');
+  const q=(document.getElementById('prodSearch').value||'').trim().toLowerCase();
+  const cats=['全部',...new Set(S.products.map(p=>p.cat||'未分类').filter(Boolean))];
+  const chips=document.getElementById('catChips');
+  chips.innerHTML=cats.map(c=>`<button class="cat-chip ${c===curCat?'active':''}" onclick="setCat('${c.replace(/'/g,"\\'")}')">${c}</button>`).join('');
+  let list=S.products.filter(p=>{
+    if(curCat!=='全部'&&(p.cat||'未分类')!==curCat)return false;
+    if(q&&!(p.name.toLowerCase().includes(q)||(p.barcode||'').includes(q)))return false;
+    return true;
+  });
+  if(!list.length){grid.innerHTML='<div class="empty">暂无商品，请到「商品管理」添加</div>';return;}
+  grid.innerHTML=list.map(p=>`
+    <div class="prod ${p.stock<=0?'out':''}" onclick="addToCart('${p.id}')">
+      <div class="emoji">${p.emoji||'📦'}</div>
+      <div class="pn">${p.name}</div>
+      <div class="pp">${money(p.price)}</div>
+      <div class="ps">${p.stock<=0?'缺货':('库存 '+p.stock+p.unit)}</div>
+    </div>`).join('');
+}
+function setCat(c){curCat=c;renderProducts();}
+function addByBarcode(){
+  const v=(document.getElementById('barcodeInput').value||'').trim();
+  if(!v){toast('请输入条码');return;}
+  const p=S.products.find(x=>(x.barcode||'')===v);
+  if(!p){toast('未找到该条码的商品');return;}
+  addToCart(p.id);document.getElementById('barcodeInput').value='';
+}
+
+/* ============ 购物车 ============ */
+let cart=[]; // {pid,name,price,qty,unit,emoji}
+function addToCart(pid){
+  const p=S.products.find(x=>x.id===pid);if(!p)return;
+  if(p.stock<=0){toast(p.name+' 缺货');return;}
+  const ex=cart.find(c=>c.pid===pid);
+  if(ex){if(ex.qty>=p.stock){toast('库存不足');return;}ex.qty++;}
+  else cart.push({pid:p.id,name:p.name,price:p.price,qty:1,unit:p.unit,emoji:p.emoji});
+  renderCart();
+}
+function changeQty(pid,d){
+  const c=cart.find(x=>x.pid===pid);if(!c)return;
+  const p=S.products.find(x=>x.id===pid);
+  c.qty+=d;
+  if(c.qty<=0)cart=cart.filter(x=>x.pid!==pid);
+  else if(p&&c.qty>p.stock){c.qty=p.stock;toast('已达库存上限');}
+  renderCart();
+}
+function removeFromCart(pid){cart=cart.filter(x=>x.pid!==pid);renderCart();}
+function clearCart(){cart=[];document.getElementById('orderDiscount').value='';document.getElementById('cartMember').value='';renderCart();}
+function cartSubtotal(){return cart.reduce((s,c)=>s+c.price*c.qty,0);}
+function cartQty(){return cart.reduce((s,c)=>s+c.qty,0);}
+function renderCart(){
+  const list=document.getElementById('cartList');
+  if(!cart.length){list.innerHTML='<div class="empty">点击左侧商品或扫码加购</div>';}
+  else{
+    list.innerHTML=cart.map(c=>`
+      <div class="cart-item">
+        <div style="font-size:22px">${c.emoji||'📦'}</div>
+        <div class="ci-name"><div class="cn">${c.name}</div><div class="cp">${money(c.price)} / ${c.unit}</div></div>
+        <div class="qty"><button onclick="changeQty('${c.pid}',-1)">−</button><span>${c.qty}</span><button onclick="changeQty('${c.pid}',1)">+</button></div>
+        <div style="min-width:64px;text-align:right;font-weight:700">${money(c.price*c.qty)}</div>
+        <button class="ghost" style="padding:4px 8px" onclick="removeFromCart('${c.pid}')">✕</button>
+      </div>`).join('');
+  }
+  const sub=cartSubtotal();
+  const disc=parseFloat(document.getElementById('orderDiscount').value||0)||0;
+  const tax=sub*(S.shop.tax||0)/100;
+  const pay=Math.max(0,sub+tax-disc);
+  document.getElementById('sumKinds').textContent=cart.length;
+  document.getElementById('sumQty').textContent=cartQty();
+  document.getElementById('sumSub').textContent=(sub+tax).toFixed(2);
+  document.getElementById('sumPay').textContent=pay.toFixed(2);
+  window._pay=pay;
+  const cr=document.getElementById('cashReceived');
+  if(!cr.value)cr.value=pay.toFixed(2);
+  calcChange();
+}
+function calcChange(){
+  const pay=window._pay||0;
+  const recv=parseFloat(document.getElementById('cashReceived').value||0)||0;
+  document.getElementById('cashChange').textContent=Math.max(0,recv-pay).toFixed(2);
+}
+function fillMemberSelect(){
+  const sel=document.getElementById('cartMember');
+  sel.innerHTML='<option value="">散客（无会员）</option>'+S.members.map(m=>`<option value="${m.id}">${m.name}（积分${m.points}｜余额${money(m.balance)}）</option>`).join('');
+}
+function checkout(method){
+  if(!cart.length){toast('购物清单为空');return;}
+  const sub=cartSubtotal();
+  const disc=parseFloat(document.getElementById('orderDiscount').value||0)||0;
+  const tax=sub*(S.shop.tax||0)/100;
+  let pay=Math.max(0,sub+tax-disc);
+  let memberId=document.getElementById('cartMember').value;
+  let member=null;
+  if(memberId){member=S.members.find(m=>m.id===memberId);}
+  // 余额抵扣
+  if(member&&member.balance>0){
+    const use=Math.min(member.balance,pay);
+    if(use>0){
+      if(confirm(`${member.name} 当前余额 ${money(member.balance)}，是否抵扣 ${money(use)}？\n点击确定用余额支付，剩余用${methodLabel(method)}。`)){
+        member.balance=(Number(member.balance)-use).toFixed(2);
+        pay=pay-use;
+        save();
+      }
+    }
+  }
+  if(method==='cash'){
+    const recv=parseFloat(document.getElementById('cashReceived').value||0)||0;
+    if(recv<pay){toast('实收现金不足，还差 '+money(pay-recv));return;}
+  }
+  finalizeOrder(method,null);
+}
+function finalizeOrder(method,breakdown){
+  const sub=cartSubtotal();
+  const disc=parseFloat(document.getElementById('orderDiscount').value||0)||0;
+  const tax=sub*(S.shop.tax||0)/100;
+  const pay=Math.max(0,sub+tax-disc);
+  const memberId=document.getElementById('cartMember').value;
+  const member=memberId?S.members.find(m=>m.id===memberId):null;
+  // 扣库存
+  for(const c of cart){
+    const p=S.products.find(x=>x.id===c.pid);
+    if(p){p.stock=Math.max(0,(Number(p.stock)||0)-c.qty);}
+  }
+  // 会员积分
+  if(member){member.points=(Number(member.points)||0)+Math.round(pay);}
+  const order={id:'NO'+String(S.seq++).padStart(6,'0'),time:new Date().toISOString(),items:cart.map(c=>({name:c.name,price:c.price,qty:c.qty,unit:c.unit})),subtotal:sub,tax:tax,discount:disc,total:(sub+tax-disc),pay:pay,method:method,payBreakdown:breakdown||null,memberId:memberId||null,memberName:member?member.name:null,refunded:false};
+  S.orders.unshift(order);
+  save();
+  buildReceipt(order);
+  cart=[];document.getElementById('orderDiscount').value='';document.getElementById('cartMember').value='';document.getElementById('cashReceived').value='';
+  renderCart();fillMemberSelect();
+  toast('收款成功 '+money(order.total));
+  setTimeout(()=>{if(confirm('是否打印小票？'))printOrder();},300);
+}
+/* 组合支付 */
+function openMixModal(){
+  if(!cart.length){toast('购物清单为空');return;}
+  const pay=window._pay||0;
+  document.getElementById('mixTotal').textContent=money(pay);
+  document.getElementById('mixNeed').textContent=pay.toFixed(2);
+  ['mixCash','mixWx','mixAli','mixCard'].forEach(i=>document.getElementById(i).value='');
+  mixCalc();openModal('mixModal');
+}
+function mixCalc(){
+  const f=id=>parseFloat(document.getElementById(id).value||0)||0;
+  document.getElementById('mixPaid').textContent=(f('mixCash')+f('mixWx')+f('mixAli')+f('mixCard')).toFixed(2);
+}
+function confirmMix(){
+  const pay=window._pay||0;
+  const f=id=>parseFloat(document.getElementById(id).value||0)||0;
+  const bd={cash:f('mixCash'),wx:f('mixWx'),ali:f('mixAli'),card:f('mixCard')};
+  const paid=bd.cash+bd.wx+bd.ali+bd.card;
+  if(Math.abs(paid-pay)>0.005){toast('已收 '+money(paid)+'，与应付不符');return;}
+  closeModal('mixModal');finalizeOrder('mix',bd);
+}
+function methodLabel(m){return {cash:'现金',wx:'微信',ali:'支付宝',card:'银行卡',mix:'组合'}[m]||m;}
+
+/* ============ 商品管理 ============ */
+function renderProductTable(){
+  const q=(document.getElementById('prodFilter').value||'').trim().toLowerCase();
+  const tb=document.getElementById('prodTable');
+  let list=S.products.filter(p=>!q||p.name.toLowerCase().includes(q)||(p.barcode||'').includes(q));
+  if(!list.length){tb.innerHTML='<tr><td colspan="7" class="empty">暂无商品</td></tr>';return;}
+  tb.innerHTML=list.map(p=>`
+    <tr>
+      <td>${p.emoji||'📦'} ${p.name}</td>
+      <td>${p.barcode||'-'}</td>
+      <td>${p.cat||'未分类'}</td>
+      <td>${money(p.price)}</td>
+      <td>${p.stock} ${p.unit}</td>
+      <td>${p.unit}</td>
+      <td style="text-align:right">
+        <button class="ghost" onclick="openProductModal('${p.id}')">编辑</button>
+        <button class="danger" onclick="delProduct('${p.id}')">删除</button>
+      </td>
+    </tr>`).join('');
+}
+function openProductModal(id){
+  document.getElementById('prodModalTitle').textContent=id?'编辑商品':'新增商品';
+  if(id){
+    const p=S.products.find(x=>x.id===id);
+    document.getElementById('pId').value=p.id;document.getElementById('pName').value=p.name;
+    document.getElementById('pBarcode').value=p.barcode||'';document.getElementById('pCat').value=p.cat||'';
+    document.getElementById('pPrice').value=p.price;document.getElementById('pStock').value=p.stock;
+    document.getElementById('pUnit').value=p.unit||'件';document.getElementById('pEmoji').value=p.emoji||'';
+  }else{
+    ['pId','pName','pBarcode','pCat','pEmoji'].forEach(i=>document.getElementById(i).value='');
+    document.getElementById('pPrice').value='';document.getElementById('pStock').value='0';document.getElementById('pUnit').value='件';
+  }
+  openModal('prodModal');
+}
+function saveProduct(){
+  const name=document.getElementById('pName').value.trim();
+  const price=parseFloat(document.getElementById('pPrice').value);
+  if(!name||isNaN(price)){toast('请填写名称和有效单价');return;}
+  const id=document.getElementById('pId').value;
+  const data={name,barcode:document.getElementById('pBarcode').value.trim(),cat:document.getElementById('pCat').value.trim()||'未分类',
+    price,stock:parseInt(document.getElementById('pStock').value||0),unit:document.getElementById('pUnit').value.trim()||'件',emoji:document.getElementById('pEmoji').value.trim()};
+  if(id){Object.assign(S.products.find(x=>x.id===id),data);}
+  else{S.products.push(Object.assign({id:uid()},data));}
+  save();closeModal('prodModal');renderProductTable();renderProducts();
+}
+function delProduct(id){
+  if(!confirm('确定删除该商品？'))return;
+  S.products=S.products.filter(x=>x.id!==id);save();renderProductTable();renderProducts();
+}
+function exportProducts(){
+  const blob=new Blob([JSON.stringify(S.products,null,2)],{type:'application/json'});
+  downloadBlob(blob,'products.json');
+}
+function importProducts(input){
+  const f=input.files[0];if(!f)return;
+  const r=new FileReader();r.onload=()=>{try{
+    const arr=JSON.parse(r.result);
+    if(!Array.isArray(arr))throw 0;
+    arr.forEach(p=>{if(!p.id)p.id=uid();});
+    S.products=arr;save();renderProductTable();renderProducts();toast('已导入 '+arr.length+' 个商品');
+  }catch(e){toast('导入失败：格式错误');}};
+  r.readAsText(f);input.value='';
+}
+
+/* ============ 订单 ============ */
+function renderOrders(){
+  const tb=document.getElementById('orderTable');
+  const d=document.getElementById('orderDate').value;
+  let list=S.orders.filter(o=>!d||(o.time||'').slice(0,10)===d);
+  document.getElementById('orderCount').textContent='共 '+list.length+' 笔';
+  if(!list.length){tb.innerHTML='<tr><td colspan="7" class="empty">暂无订单</td></tr>';return;}
+  tb.innerHTML=list.map(o=>`
+    <tr>
+      <td>${o.id}</td>
+      <td>${fmtTime(o.time)}</td>
+      <td>${o.items.reduce((s,i)=>s+i.qty,0)} 件 / ${o.items.length} 种</td>
+      <td>${money(o.total)}</td>
+      <td><span class="tag ${o.refunded?'refund':o.method}">${o.refunded?'已退款':methodLabel(o.method)}</span></td>
+      <td>${o.memberName||'-'}</td>
+      <td style="text-align:right"><button class="ghost" onclick="viewOrder('${o.id}')">查看</button></td>
+    </tr>`).join('');
+}
+function viewOrder(id){
+  const o=S.orders.find(x=>x.id===id);if(!o)return;
+  window._curOrder=o;
+  document.getElementById('orderDetail').innerHTML=`
+    <div class="pill">单号 ${o.id} · ${fmtTime(o.time)}</div>
+    <table style="margin-top:8px">
+      <thead><tr><th>商品</th><th>单价</th><th>数量</th><th>小计</th></tr></thead>
+      <tbody>${o.items.map(i=>`<tr><td>${i.name}</td><td>${money(i.price)}</td><td>${i.qty}${i.unit}</td><td>${money(i.price*i.qty)}</td></tr>`).join('')}</tbody>
+    </table>
+    <div class="summary">
+      <div class="sum-row"><span>商品小计</span><span>${money(o.subtotal)}</span></div>
+      ${o.tax?`<div class="sum-row"><span>税额</span><span>${money(o.tax)}</span></div>`:''}
+      ${o.discount?`<div class="sum-row"><span>优惠</span><span>-${money(o.discount)}</span></div>`:''}
+      <div class="sum-row total"><span>实收</span><span>${money(o.total)}</span></div>
+      <div class="sum-row"><span>支付方式</span><span>${o.refunded?'已退款':methodLabel(o.method)}</span></div>
+      ${o.memberName?`<div class="sum-row"><span>会员</span><span>${o.memberName}</span></div>`:''}
+    </div>`;
+  document.getElementById('refundBtn').classList.toggle('hidden',o.refunded);
+  openModal('orderModal');
+}
+function refundOrder(){
+  const o=window._curOrder;if(!o||o.refunded)return;
+  if(!confirm('确认退款并作废该订单？库存将回补，会员积分/余额将冲回。'))return;
+  for(const i of o.items){
+    const p=S.products.find(x=>x.name===i.name);
+    if(p)p.stock=(Number(p.stock)||0)+i.qty;
+  }
+  if(o.memberId){const m=S.members.find(x=>x.id===o.memberId);if(m){m.points=Math.max(0,(Number(m.points)||0)-Math.round(o.total));}}
+  o.refunded=true;save();
+  closeModal('orderModal');renderOrders();renderProducts();toast('已退款');
+}
+function fmtTime(iso){const d=new Date(iso);return d.toLocaleString('zh-CN',{hour12:false});}
+
+/* ============ 报表 ============ */
+function inRange(o){
+  const f=document.getElementById('repFrom').value,t=document.getElementById('repTo').value,d=(o.time||'').slice(0,10);
+  if(f&&d<f)return false;if(t&&d>t)return false;return true;
+}
+function renderReports(){
+  const list=S.orders.filter(o=>!o.refunded&&inRange(o));
+  const today=S.orders.filter(o=>!o.refunded&&(o.time||'').slice(0,10)===todayStr());
+  const sum=a=>a.reduce((s,o)=>s+o.total,0);
+  const body=document.getElementById('reportBody');
+  const byMethod={};
+  list.forEach(o=>{
+    if(o.method==='mix'&&o.payBreakdown){for(const k of ['cash','wx','ali','card'])if(o.payBreakdown[k])byMethod[k]=(byMethod[k]||0)+o.payBreakdown[k];}
+    else byMethod[o.method]=(byMethod[o.method]||0)+o.total;
+  });
+  const prodStat={};list.forEach(o=>o.items.forEach(i=>{prodStat[i.name]=(prodStat[i.name]||{qty:0,amt:0});prodStat[i.name].qty+=i.qty;prodStat[i.name].amt+=i.price*i.qty;}));
+  const top=Object.entries(prodStat).sort((a,b)=>b[1].amt-a[1].amt).slice(0,8);
+  body.innerHTML=`
+    <div class="stats">
+      <div class="stat"><div class="sl">本期营业额</div><div class="sv">${money(sum(list))}</div></div>
+      <div class="stat"><div class="sl">本期订单数</div><div class="sv">${list.length}<small> 笔</small></div></div>
+      <div class="stat"><div class="sl">客单价</div><div class="sv">${money(list.length?sum(list)/list.length:0)}</div></div>
+      <div class="stat"><div class="sl">今日营业额</div><div class="sv">${money(sum(today))}</div></div>
+    </div>
+    <div class="card" style="padding:14px;margin-bottom:14px">
+      <h3 style="margin-top:0">支付方式占比</h3>
+      ${Object.keys(byMethod).length?Object.entries(byMethod).map(([k,v])=>`<div class="sum-row"><span class="tag ${k}">${methodLabel(k)}</span><span>${money(v)}（${list.length?Math.round(v/sum(list)*100):0}%）</span></div>`).join(''):'<div class="empty">本期无数据</div>'}
+    </div>
+    <div class="card" style="padding:14px">
+      <h3 style="margin-top:0">热销商品 TOP</h3>
+      ${top.length?`<table><thead><tr><th>商品</th><th>销量</th><th>销售额</th></tr></thead><tbody>${top.map(([n,s])=>`<tr><td>${n}</td><td>${s.qty}</td><td>${money(s.amt)}</td></tr>`).join('')}</tbody></table>`:'<div class="empty">本期无数据</div>'}
+    </div>`;
+}
+function clearRepDates(){document.getElementById('repFrom').value='';document.getElementById('repTo').value='';renderReports();}
+
+/* ============ 会员 ============ */
+function renderMembers(){
+  const q=(document.getElementById('memFilter').value||'').trim().toLowerCase();
+  const tb=document.getElementById('memTable');
+  let list=S.members.filter(m=>!q||m.name.toLowerCase().includes(q)||(m.phone||'').includes(q));
+  if(!list.length){tb.innerHTML='<tr><td colspan="5" class="empty">暂无会员</td></tr>';return;}
+  tb.innerHTML=list.map(m=>`
+    <tr>
+      <td>${m.name}</td><td>${m.phone||'-'}</td><td>${m.points}</td><td>${money(m.balance)}</td>
+      <td style="text-align:right">
+        <button class="ghost" onclick="openTopup('${m.id}')">充值</button>
+        <button class="ghost" onclick="openMemberModal('${m.id}')">编辑</button>
+        <button class="danger" onclick="delMember('${m.id}')">删除</button>
+      </td>
+    </tr>`).join('');
+}
+function openMemberModal(id){
+  document.getElementById('memModalTitle').textContent=id?'编辑会员':'新增会员';
+  if(id){const m=S.members.find(x=>x.id===id);
+    document.getElementById('mId').value=m.id;document.getElementById('mName').value=m.name;document.getElementById('mPhone').value=m.phone||'';
+    document.getElementById('mPoints').value=m.points;document.getElementById('mBalance').value=m.balance;
+  }else{['mId','mName','mPhone'].forEach(i=>document.getElementById(i).value='');document.getElementById('mPoints').value='0';document.getElementById('mBalance').value='0';}
+  openModal('memModal');
+}
+function saveMember(){
+  const name=document.getElementById('mName').value.trim();if(!name){toast('请填写姓名');return;}
+  const id=document.getElementById('mId').value;
+  const data={name,phone:document.getElementById('mPhone').value.trim(),points:parseInt(document.getElementById('mPoints').value||0),balance:parseFloat(document.getElementById('mBalance').value||0)};
+  if(id)Object.assign(S.members.find(x=>x.id===id),data);else S.members.push(Object.assign({id:uid()},data));
+  save();closeModal('memModal');renderMembers();fillMemberSelect();
+}
+function delMember(id){if(!confirm('删除会员？'))return;S.members=S.members.filter(x=>x.id!==id);save();renderMembers();fillMemberSelect();}
+function openTopup(id){const m=S.members.find(x=>x.id===id);if(!m)return;window._topupId=id;document.getElementById('topupName').textContent=m.name+' · 当前余额 '+money(m.balance);document.getElementById('topupAmt').value='';openModal('topupModal');}
+function doTopup(){const m=S.members.find(x=>x.id===window._topupId);if(!m)return;const a=parseFloat(document.getElementById('topupAmt').value||0);if(!a){toast('请输入金额');return;}m.balance=(Number(m.balance)+a).toFixed(2);save();closeModal('topupModal');renderMembers();fillMemberSelect();toast('已更新余额');}
+
+/* ============ 设置 / 备份 ============ */
+function renderHeader(){
+  document.getElementById('hdrShop').textContent=S.shop.name;
+  const box=document.getElementById('hdrLogo');
+  if(S.shop.logo){box.innerHTML='<img src="'+S.shop.logo+'" style="width:34px;height:34px;border-radius:9px;object-fit:cover">';}
+  else{box.textContent='收';}
+}
+function renderLogoPreview(){
+  const pv=document.getElementById('logoPreview');
+  if(pv)pv.innerHTML=S.shop.logo?'<img src="'+S.shop.logo+'" style="width:48px;height:48px;border-radius:8px;object-fit:cover;border:1px solid var(--line)">':'';
+}
+function setLogoFromFile(input){
+  const f=input.files[0];if(!f)return;
+  const r=new FileReader();
+  r.onload=()=>{S.shop.logo=r.result;renderHeader();renderLogoPreview();save();toast('Logo 已更新');};
+  r.readAsDataURL(f);
+}
+function checkUpdates(){
+  if(window.electron&&window.electron.checkForUpdates){
+    window.electron.checkForUpdates().then(r=>{if(r&&!r.ok)toast('暂无更新或更新未配置');else toast('已检查更新');});
+  }else{toast('当前为网页版，更新功能需在桌面应用中使用');}
+}
+function saveSettings(){
+  S.shop.name=document.getElementById('setName').value||'我的店铺';
+  S.shop.currency=document.getElementById('setCur').value||'¥';
+  S.shop.tax=parseFloat(document.getElementById('setTax').value||0)||0;
+  renderHeader();renderLogoPreview();
+  save();
+}
+function exportAll(){const blob=new Blob([JSON.stringify(S,null,2)],{type:'application/json'});downloadBlob(blob,'pos_backup_'+todayStr()+'.json');toast('已导出备份');}
+function importAll(input){const f=input.files[0];if(!f)return;const r=new FileReader();r.onload=()=>{try{const o=JSON.parse(r.result);if(!o.products||!o.orders)throw 0;S=Object.assign({shop:{name:'我的店铺',currency:'¥',tax:0},products:[],members:[],orders:[],seq:1},o);save();initUI();toast('备份已恢复');}catch(e){toast('导入失败：格式错误');}};r.readAsText(f);input.value='';}
+function wipeData(){if(!confirm('将清空全部商品、会员、订单数据，不可恢复！建议先导出备份。确认？'))return;S={shop:S.shop,products:[],members:[],orders:[],seq:1};save();initUI();toast('已清空');}
+function loadDemo(){
+  S.products=[
+    {id:uid(),name:'可乐',barcode:'6901',cat:'饮料',price:3,stock:100,unit:'瓶',emoji:'🥤'},
+    {id:uid(),name:'矿泉水',barcode:'6902',cat:'饮料',price:2,stock:200,unit:'瓶',emoji:'💧'},
+    {id:uid(),name:'薯片',barcode:'6903',cat:'零食',price:6.5,stock:80,unit:'袋',emoji:'🥔'},
+    {id:uid(),name:'面包',barcode:'6904',cat:'食品',price:5,stock:50,unit:'个',emoji:'🍞'},
+    {id:uid(),name:'牛奶',barcode:'6905',cat:'饮料',price:8,stock:60,unit:'盒',emoji:'🥛'},
+    {id:uid(),name:'牙膏',barcode:'6906',cat:'日用品',price:12,stock:40,unit:'支',emoji:'🧴'},
+  ];
+  S.members=[{id:uid(),name:'张会员',phone:'13800000000',points:120,balance:50}];
+  save();initUI();toast('演示数据已载入');
+}
+function downloadBlob(blob,name){const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;a.click();URL.revokeObjectURL(a.href);}
+
+/* ============ 小票 ============ */
+function buildReceipt(o){
+  const items=o.items.map(i=>`<div class="rl"><span>${i.name} ×${i.qty}</span><span>${money(i.price*i.qty)}</span></div>`).join('');
+  document.getElementById('receipt').innerHTML=`
+    ${S.shop.logo?`<div style="text-align:center"><img src="${S.shop.logo}" style="width:64px;height:64px;object-fit:cover;border-radius:8px"></div>`:''}
+    <h4>${S.shop.name}</h4>
+    <div class="rl"><span>单号</span><span>${o.id}</span></div>
+    <div class="rl"><span>时间</span><span>${fmtTime(o.time)}</span></div>
+    <hr>${items}
+    <hr>
+    ${o.discount?`<div class="rl"><span>优惠</span><span>-${money(o.discount)}</span></div>`:''}
+    ${o.tax?`<div class="rl"><span>税额</span><span>${money(o.tax)}</span></div>`:''}
+    ${o.method==='mix'&&o.payBreakdown?Object.entries(o.payBreakdown).filter(([k,v])=>v>0).map(([k,v])=>`<div class="rl"><span>${methodLabel(k)}</span><span>${money(v)}</span></div>`).join(''):`<div class="rl"><span>实收(${methodLabel(o.method)})</span><span>${money(o.total)}</span></div>`}
+    ${o.memberName?`<div class="rl"><span>会员</span><span>${o.memberName}</span></div>`:''}
+    <hr><div style="text-align:center">谢谢惠顾，欢迎再次光临</div>`;
+}
+function printOrder(){buildReceipt(window._curOrder||lastOrder());window.print();}
+function lastOrder(){return S.orders[0];}
+
+/* ============ 交班 / 班次 ============ */
+function shiftScopeList(){
+  return S.orders.filter(o=>!o.refunded && (!S.lastShift || (o.time||'')>=S.lastShift));
+}
+function renderShift(){
+  document.getElementById('shiftSince').textContent=S.lastShift?('自 '+fmtTime(S.lastShift)+' 起'):'尚未交班（统计全部历史）';
+  const list=shiftScopeList();
+  const sum=a=>a.reduce((s,o)=>s+o.total,0);
+  const bd={cash:0,wx:0,ali:0,card:0};
+  list.forEach(o=>{if(o.method==='mix'&&o.payBreakdown){for(const k in bd)bd[k]+=o.payBreakdown[k]||0;}else bd[o.method]+=o.total;});
+  document.getElementById('shiftSummary').innerHTML=`
+    <div class="stats" style="margin:0;grid-template-columns:repeat(auto-fit,minmax(120px,1fr))">
+      <div class="stat"><div class="sl">笔数</div><div class="sv">${list.length}</div></div>
+      <div class="stat"><div class="sl">营收</div><div class="sv">${money(sum(list))}</div></div>
+      <div class="stat"><div class="sl">现金</div><div class="sv">${money(bd.cash)}</div></div>
+      <div class="stat"><div class="sl">微信</div><div class="sv">${money(bd.wx)}</div></div>
+      <div class="stat"><div class="sl">支付宝</div><div class="sv">${money(bd.ali)}</div></div>
+      <div class="stat"><div class="sl">银行卡</div><div class="sv">${money(bd.card)}</div></div>
+    </div>`;
+  const tb=document.getElementById('shiftTable');
+  if(!S.shifts.length){tb.innerHTML='<tr><td colspan="8" class="empty">暂无交班记录</td></tr>';return;}
+  tb.innerHTML=S.shifts.map(s=>`<tr><td>${s.id}</td><td>${fmtTime(s.time)}</td><td>${s.count}</td><td>${money(s.total)}</td><td>${money(s.bd.cash)}</td><td>${money(s.bd.wx)}</td><td>${money(s.bd.ali)}</td><td>${money(s.bd.card)}</td></tr>`).join('');
+}
+function doShift(){
+  const list=shiftScopeList();
+  if(!list.length){toast('本班暂无订单');return;}
+  const sum=a=>a.reduce((s,o)=>s+o.total,0);
+  const bd={cash:0,wx:0,ali:0,card:0};
+  list.forEach(o=>{if(o.method==='mix'&&o.payBreakdown){for(const k in bd)bd[k]+=o.payBreakdown[k]||0;}else bd[o.method]+=o.total;});
+  const rec={id:'S'+String(S.shifts.length+1).padStart(3,'0'),time:new Date().toISOString(),count:list.length,total:sum(list),bd};
+  S.shifts.unshift(rec);S.lastShift=rec.time;save();renderShift();
+  document.getElementById('receipt').innerHTML=`
+    <h4>${S.shop.name} · 交班单</h4>
+    <div class="rl"><span>交班单号</span><span>${rec.id}</span></div>
+    <div class="rl"><span>交班时间</span><span>${fmtTime(rec.time)}</span></div>
+    <hr>
+    <div class="rl"><span>订单笔数</span><span>${rec.count}</span></div>
+    <div class="rl"><span>营业总额</span><span>${money(rec.total)}</span></div>
+    <div class="rl"><span>现金</span><span>${money(rec.bd.cash)}</span></div>
+    <div class="rl"><span>微信</span><span>${money(rec.bd.wx)}</span></div>
+    <div class="rl"><span>支付宝</span><span>${money(rec.bd.ali)}</span></div>
+    <div class="rl"><span>银行卡</span><span>${money(rec.bd.card)}</span></div>
+    <hr><div style="text-align:center">交班完成，请核对账款</div>`;
+  toast('交班完成：'+rec.count+' 笔，营收 '+money(rec.total));
+  setTimeout(()=>window.print(),300);
+}
+
+/* ============ 键盘快捷键 ============ */
+document.addEventListener('keydown',e=>{
+  const k=e.key;
+  if(['F1','F2','F3','F4','F9'].includes(k)){
+    if(activeTab==='pos'){e.preventDefault();if(k==='F9')openMixModal();else checkout({F1:'cash',F2:'wx',F3:'ali',F4:'card'}[k]);}
+    return;
+  }
+  if(e.target.tagName==='INPUT'&&e.target.id==='barcodeInput'&&k==='Enter'){e.preventDefault();addByBarcode();}
+});
+
+/* ============ PWA 离线 / 可安装 ============ */
+if('serviceWorker' in navigator && location.protocol.indexOf('http')===0){
+  window.addEventListener('load',()=>{navigator.serviceWorker.register('sw.js').catch(()=>{});});
+}
+
+/* ============ 初始化 ============ */
+function initUI(){
+  renderHeader();
+  document.getElementById('setName').value=S.shop.name;
+  document.getElementById('setCur').value=S.shop.currency;
+  document.getElementById('setTax').value=S.shop.tax;
+  renderLogoPreview();
+  if(window.electron&&window.electron.getAppVersion){window.electron.getAppVersion().then(v=>{const el=document.getElementById('verText');if(el)el.textContent='当前版本 v'+v;});}
+  if(window.electron&&window.electron.onDeployConfig){
+    window.electron.onDeployConfig(cfg=>{
+      if(!cfg)return;
+      if(S.shop.name==='我的店铺'&&cfg.name){S.shop.name=cfg.name;}
+      if(cfg.logo){S.shop.logo=cfg.logo;}
+      save();renderHeader();renderLogoPreview();
+      const n=document.getElementById('setName');if(n)n.value=S.shop.name;
+    });
+  }
+  renderProducts();renderCart();fillMemberSelect();
+}
+load();initUI();
+</script>
+</body>
+</html>
