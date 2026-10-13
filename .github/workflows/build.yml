@@ -14,10 +14,13 @@ jobs:
         include:
           - os: macos-latest
             platform: mac
+            extra: --mac --arm64 --x64
           - os: windows-latest
             platform: win
+            extra: --win
           - os: ubuntu-latest
             platform: linux
+            extra: --linux
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -38,7 +41,7 @@ jobs:
         run: npm ci
 
       - name: 构建（当前平台）
-        run: npm run dist -- --publish never
+        run: npm run dist -- --publish never ${{ matrix.extra }}
 
       - name: 上传产物
         uses: actions/upload-artifact@v4
