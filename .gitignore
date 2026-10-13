@@ -7,6 +7,16 @@ __pycache__/
 .DS_Store
 builder-debug.yml
 
+# 本地打包产物（自行安装用，不入库）
+dist-android/
+dist-desktop/
+*.apk
+*.exe
+*.dmg
+*.AppImage
+*.deb
+*.blockmap
+
 # Capacitor / Android
 www/
 android/app/build/
