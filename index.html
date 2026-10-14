@@ -925,7 +925,7 @@ const DEF_S={
     loginRequired:false,lockDiscount:false,
     sms:{enabled:true,channel:'local',webhook:'',sign:'',onOpen:true,onConsume:false,onTopup:false,
       templates:Object.assign({},DEF_SMS_TPL)}},
-  products:[],members:[],orders:[],shifts:[],smsLog:[],holds:[],
+  products:[],members:[],orders:[],stockLog:[],shifts:[],smsLog:[],holds:[],
   cardSeq:0,lastShift:null,seq:1,session:null
 };
 let S=JSON.parse(JSON.stringify(DEF_S));
@@ -938,7 +938,7 @@ function normalize(){
   if(!Array.isArray(S.shop.promo.fullReduce))S.shop.promo.fullReduce=[];
   if(!Array.isArray(S.shop.levels)||!S.shop.levels.length)S.shop.levels=JSON.parse(JSON.stringify(DEF_S.shop.levels));
   if(!Array.isArray(S.shop.staff)||!S.shop.staff.length)S.shop.staff=JSON.parse(JSON.stringify(DEF_S.shop.staff));
-  ['products','members','orders','shifts','smsLog','holds'].forEach(k=>{if(!Array.isArray(S[k]))S[k]=[];});
+  ['products','members','orders','stockLog','shifts','smsLog','holds'].forEach(k=>{if(!Array.isArray(S[k]))S[k]=[];});
   S.seq=S.seq||1;
   S.cardSeq=Math.max(Number(S.cardSeq)||0,S.members.filter(m=>m.no).length);
   S.members.forEach(m=>{
@@ -2233,7 +2233,8 @@ const BK_TABLES={
 function bkRows(key){
   const t=BK_TABLES[key];
   const head=t.cols.map(c=>c[1]);
-  const body=t.get().map(r=>t.cols.map(c=>{
+  const src=t.get();                       // 兜底：某个表还没被用过时可能是 undefined，不能直接 .map
+  const body=(Array.isArray(src)?src:[]).map(r=>t.cols.map(c=>{
     let v=r[c[0]];
     if(v===undefined||v===null)v='';
     if(typeof v==='boolean')v=v?'是':'否';
@@ -2249,7 +2250,7 @@ function bkCSV(rows){
   }).join(',')).join('\r\n');
 }
 function bkPack(){
-  return {app:'通用收银台',version:'1.3.0',exportedAt:new Date().toISOString(),
+  return {app:'通用收银台',version:'1.3.1',exportedAt:new Date().toISOString(),
     shop:S.shop,products:S.products,members:S.members,orders:S.orders,
     shifts:S.shifts,stockLog:S.stockLog,smsLog:S.smsLog,holds:S.holds,
     seq:S.seq,cardSeq:S.cardSeq};
@@ -2278,9 +2279,9 @@ function expXLSX(){
     ['商品数',S.products.length],
     ['会员数',S.members.length],
     ['订单数',S.orders.length],
-    ['库存流水',S.stockLog.length],
-    ['短信记录',S.smsLog.length],
-    ['软件版本','通用收银台 1.3.0']
+    ['库存流水',(S.stockLog||[]).length],
+    ['短信记录',(S.smsLog||[]).length],
+    ['软件版本','通用收银台 1.3.1']
   ]});
   downloadBlob(bkBuildXLSX(sheets),'通用收银台数据_'+todayStr()+'.xlsx');
   toast('已导出 Excel（'+sheets.length+' 个工作表）');
@@ -2314,7 +2315,8 @@ function expSQL(){
     const t=BK_TABLES[k],cols=t.cols.map(c=>c[0]);
     out.push('DROP TABLE IF EXISTS "'+t.name+'";');
     out.push('CREATE TABLE "'+t.name+'" ('+cols.map(c=>'"'+c+'" TEXT').join(', ')+');');
-    t.get().forEach(r=>{
+    const rows=t.get();
+    (Array.isArray(rows)?rows:[]).forEach(r=>{
       const vals=t.cols.map(c=>{
         let v=r[c[0]];
         if(v===undefined||v===null||v==='')return 'NULL';
