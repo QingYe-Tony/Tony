@@ -69,10 +69,12 @@
   .sum-row.total{font-size:20px;font-weight:800;color:var(--ink);border-top:1px solid var(--line);margin-top:6px;padding-top:8px}
   .pay-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px}
   .pay-grid button{padding:14px 0;font-weight:700;font-size:15px}
+  .pay-grid button:disabled{opacity:.4;cursor:not-allowed}
   .pay-cash{background:#ecfdf5;color:var(--ok)}
   .pay-wx{background:#e8f7ee;color:#07c160}
   .pay-ali{background:#e9f3ff;color:#1677ff}
   .pay-card{background:#f3e8ff;color:#7c3aed}
+  .pay-bal{background:#fff7e6;color:#b45309}
   table{width:100%;border-collapse:collapse}
   th,td{padding:9px 10px;text-align:left;border-bottom:1px solid var(--line);font-size:13px}
   th{color:var(--muted);font-weight:600;background:#fafbfc}
@@ -314,13 +316,10 @@
               <div class="sum-row"><span>找零</span><span id="cashChange" style="color:var(--ok);font-weight:700">0.00</span></div>
             </div>
 
-            <div class="pay-grid">
-              <button class="pay-cash" onclick="checkout('cash')">现金</button>
-              <button class="pay-wx" onclick="checkout('wx')">微信</button>
-              <button class="pay-ali" onclick="checkout('ali')">支付宝</button>
-              <button class="pay-card" onclick="checkout('card')">银行卡</button>
-            </div>
-            <button class="ghost" style="width:100%;margin-top:8px" onclick="openMixModal()">组合支付 / 拆分收款 (F9)</button>
+            <div class="pay-grid" id="payGrid"></div>
+            <div class="pill" id="payBalHint" style="margin-top:6px"></div>
+            <button class="ghost" id="mixBtn" style="width:100%;margin-top:8px"
+              onclick="openMixModal()">组合支付 / 拆分收款 (F9)</button>
           </div>
         </div>
       </div>
@@ -386,7 +385,7 @@
       <div class="card" style="padding:14px;margin-top:14px">
         <h3 style="margin-top:0">交班记录</h3>
         <table>
-          <thead><tr><th>交班单号</th><th>交班时间</th><th>笔数</th><th>营收</th><th>现金</th><th>微信</th><th>支付宝</th><th>银行卡</th></tr></thead>
+          <thead><tr><th>交班单号</th><th>交班时间</th><th>笔数</th><th>营收</th><th>现金</th><th>微信</th><th>支付宝</th><th>银行卡</th><th>卡余额</th></tr></thead>
           <tbody id="shiftTable"></tbody>
         </table>
       </div>
@@ -457,6 +456,17 @@
               <option value="yuan">抹去角分（保留到元，如 68.45 → 68）</option>
             </select></div>
         </div>
+
+        <hr style="border:none;border-top:1px solid var(--line);margin:14px 0">
+        <h3>收银台支付方式</h3>
+        <div class="switch-row"><input type="checkbox" id="payCash" onchange="saveSettings()"> 现金</div>
+        <div class="switch-row"><input type="checkbox" id="payWx" onchange="saveSettings()"> 微信</div>
+        <div class="switch-row"><input type="checkbox" id="payAli" onchange="saveSettings()"> 支付宝</div>
+        <div class="switch-row"><input type="checkbox" id="payCard" onchange="saveSettings()"> 银行卡</div>
+        <div class="switch-row"><input type="checkbox" id="payBalance" onchange="saveSettings()"> 卡余额（用会员卡余额抵扣，可单独付清或在组合支付里手动填）</div>
+        <div class="switch-row"><input type="checkbox" id="payMix" onchange="saveSettings()"> 组合支付 / 拆分收款（手动填写每种方式各收多少）</div>
+        <p class="cfg-help">取消勾选的支付方式不会出现在收银台，<b>至少保留一种</b>（全关会自动恢复「现金」）。
+          历史订单与报表统计不受影响。</p>
 
         <hr style="border:none;border-top:1px solid var(--line);margin:14px 0">
         <h3>员工与权限</h3>
@@ -583,6 +593,8 @@ exports.main_handler = async (event) => {
       <div class="field" style="flex:1"><label>安全库存（低于则预警）</label><input id="pSafe" type="number" min="0" step="1" value="0"></div>
       <div class="field" style="flex:1"><label>单位</label><input id="pUnit" value="件"></div>
     </div>
+    <div class="switch-row"><input type="checkbox" id="pUnlimited" onchange="onUnlimitedToggle()"> 库存无限（不记库存，收银不校验也不扣减）</div>
+    <p class="cfg-help" id="pUnlimitedHint" style="display:none">勾选后该商品的「库存 / 安全库存」不生效：收银台随便卖、不扣库存、不做低库存预警，也不进盘点清单与入库下拉。<br>上面填的数字会留着但不生效，<b>取消勾选后即按原数字继续管库存</b>。适合服务、话费充值、随意量商品。</p>
     <div class="field"><label>图标 (emoji)</label><input id="pEmoji" placeholder="如：🥤" maxlength="4"></div>
     <div class="row" style="justify-content:flex-end;margin-top:8px">
       <button class="ghost" onclick="closeModal('prodModal')">取消</button>
@@ -789,16 +801,20 @@ exports.main_handler = async (event) => {
   </div>
 </div>
 
-<!-- 组合支付弹窗 -->
+<!-- 组合支付 / 拆分收款弹窗 -->
 <div id="mixModal" class="modal-bg hidden">
   <div class="modal">
-    <h3>组合支付</h3>
-    <p class="pill">应付合计：<span id="mixTotal"></span></p>
-    <div class="field"><label>现金</label><input id="mixCash" type="number" min="0" step="0.01" oninput="mixCalc()"></div>
-    <div class="field"><label>微信</label><input id="mixWx" type="number" min="0" step="0.01" oninput="mixCalc()"></div>
-    <div class="field"><label>支付宝</label><input id="mixAli" type="number" min="0" step="0.01" oninput="mixCalc()"></div>
-    <div class="field"><label>银行卡</label><input id="mixCard" type="number" min="0" step="0.01" oninput="mixCalc()"></div>
+    <h3>组合支付 / 拆分收款</h3>
+    <p class="pill">应付合计：<span id="mixTotal"></span>　手动填写每种方式各收多少，合计需等于应付</p>
+    <div class="field" id="mixCashField"><label>现金</label><input id="mixCash" type="number" min="0" step="0.01" oninput="mixCalc()"></div>
+    <div class="field" id="mixWxField"><label>微信</label><input id="mixWx" type="number" min="0" step="0.01" oninput="mixCalc()"></div>
+    <div class="field" id="mixAliField"><label>支付宝</label><input id="mixAli" type="number" min="0" step="0.01" oninput="mixCalc()"></div>
+    <div class="field" id="mixCardField"><label>银行卡</label><input id="mixCard" type="number" min="0" step="0.01" oninput="mixCalc()"></div>
+    <div class="field" id="mixBalField"><label>卡余额 <span class="pill" id="mixBalAvail"></span></label>
+      <input id="mixBal" type="number" min="0" step="0.01" oninput="mixCalc()"></div>
+    <p class="cfg-help" id="mixHelp"></p>
     <div class="sum-row"><span>已收 / 应付</span><span><span id="mixPaid">0.00</span> / <span id="mixNeed">0.00</span></span></div>
+    <div class="sum-row" id="mixDiffRow" style="display:none"><span>还差</span><span id="mixDiff" style="color:var(--danger);font-weight:700">0.00</span></div>
     <div class="row" style="justify-content:flex-end;margin-top:8px">
       <button class="ghost" onclick="closeModal('mixModal')">取消</button>
       <button class="primary" onclick="confirmMix()">确认收款</button>
@@ -812,7 +828,18 @@ exports.main_handler = async (event) => {
     <h3>使用帮助</h3>
     <div style="max-height:60vh;overflow:auto;font-size:13px;line-height:1.7">
       <p><b>快速开始</b><br>1) 设置 → 填入店铺名称、上传 Logo、选好货币与税率。<br>2) 商品管理 → 新增商品（名称/条码/分类/单价/库存）。<br>3) 收银台 → 点商品或扫码加购 → 选支付方式 → 完成。</p>
-      <p><b>快捷键</b><br>收银台：F1 现金 / F2 微信 / F3 支付宝 / F4 银行卡 / F9 组合支付；扫码框输入条码按 Enter 加购。</p>
+      <p><b>快捷键</b><br>收银台：F1 现金 / F2 微信 / F3 支付宝 / F4 银行卡 / F6 卡余额 / F9 组合支付；扫码框输入条码按 Enter 加购。</p>
+      <p><b>卡余额支付</b><br>先在上方「选择会员」里选中会员，
+        收银台会出现「卡余额」按钮（会员余额为 0 时不可点）。<br>
+        · 余额够：点「卡余额」直接付清。<br>
+        · 余额不够：会提示差额，确认后可先在「组合支付」里手动填写每种方式各收多少。<br>
+        · 用现金/微信等收款时，也会问你要不要先用卡余额抵扣一部分。</p>
+      <p><b>支付方式开关</b><br>设置 → 收银台支付方式，可手动勾选收银台要显示哪几种收款方式（含卡余额与组合支付），
+        关掉的不显示；至少要留一种。</p>
+      <p><b>库存无限</b><br>商品管理 → 新增/编辑商品 → 勾选「库存无限」，该商品就不记库存了：
+        收银台随便卖（不显示缺货）、结算不扣库存、不进低库存预警与盘点清单，<b>入库</b>按钮也会置灰。<br>
+        适合服务、话费充值、随意量商品，或从 Excel 导入时来源表根本没有库存列的情况
+        （导入时「新商品若来源没有库存列」默认就是「库存无限」）。取消勾选即恢复按数字库存管理。</p>
       <p><b>挂单 / 取单</b>：店内忙时点「挂单」把当前购物清单暂存（可写备注如「3号桌」），
         闲下来点「取单」挑一条继续结算。挂单内容与会员、优惠一并保存。</p>
       <p><b>促销与优惠</b>：结算金额按「满减 → 会员等级折扣 → 整单优惠 → 抹零」依次计算，
@@ -955,6 +982,8 @@ const DEF_S={
     promo:{memberDiscount:true,roundOff:false,roundMode:'jiao',fullReduce:[]},
     staff:[{id:'owner',name:'店长',role:'owner',pin:''}],
     loginRequired:false,lockDiscount:false,
+    /* 收银台显示哪些支付方式（设置页可手动开关）；balance = 会员卡余额 */
+    pay:{cash:true,wx:true,ali:true,card:true,balance:true,mix:true},
     sms:{enabled:true,channel:'local',webhook:'',sign:'',onOpen:true,onConsume:false,onTopup:false,
       templates:Object.assign({},DEF_SMS_TPL)}},
   products:[],members:[],orders:[],stockLog:[],shifts:[],smsLog:[],holds:[],
@@ -967,6 +996,7 @@ function normalize(){
   S.shop.sms=Object.assign({},DEF_S.shop.sms,S.shop.sms||{});
   S.shop.sms.templates=Object.assign({},DEF_SMS_TPL,S.shop.sms.templates||{});
   S.shop.promo=Object.assign({},DEF_S.shop.promo,S.shop.promo||{});
+  S.shop.pay=Object.assign({},DEF_S.shop.pay,S.shop.pay||{});
   if(!Array.isArray(S.shop.promo.fullReduce))S.shop.promo.fullReduce=[];
   if(!Array.isArray(S.shop.levels)||!S.shop.levels.length)S.shop.levels=JSON.parse(JSON.stringify(DEF_S.shop.levels));
   if(!Array.isArray(S.shop.staff)||!S.shop.staff.length)S.shop.staff=JSON.parse(JSON.stringify(DEF_S.shop.staff));
@@ -978,6 +1008,14 @@ function normalize(){
     if(m.totalSpent==null)m.totalSpent=0;
     if(m.visits==null)m.visits=0;
   });
+  /* 库存无限：CSV/xls 导入回来的可能是 是/否/true/1，统一成真正的 boolean，
+     否则 p.unlimited 是字符串 '否' 也会被当「真」→ 商品永远显示无限库存 */
+  S.products.forEach(p=>{p.unlimited=isUnlimited(p.unlimited);});
+}
+function isUnlimited(v){
+  if(v===true)return true;
+  const s=String(v==null?'':v).trim().toLowerCase();
+  return s==='true'||s==='1'||s==='是'||s==='无限'||s==='不限'||s==='yes'||s==='y';
 }
 function nextCardNo(){
   const p=(S.shop.card&&S.shop.card.prefix)||'VIP';
@@ -994,6 +1032,10 @@ function num(n){return Number(n||0).toFixed(2);}
 function todayStr(){const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
 function cardCfg(){return S.shop.card;}
 function smsCfg(){return S.shop.sms;}
+function payCfg(){
+  if(!S.shop.pay)S.shop.pay=Object.assign({},DEF_S.shop.pay);
+  return S.shop.pay;
+}
 
 
 /* ============ 通用 UI ============ */
@@ -1045,6 +1087,13 @@ function loadSettingsForm(){
   document.getElementById('pmRoundMode').value=p.roundMode||'jiao';
   document.getElementById('pmFull').value=(p.fullReduce||[]).map(r=>'满'+r.full+'减'+r.cut).join('\n');
   document.getElementById('lvRows').value=(S.shop.levels||[]).map(l=>l.name+','+l.threshold+','+l.discount).join('\n');
+  const pay=payCfg();
+  document.getElementById('payCash').checked=pay.cash!==false;
+  document.getElementById('payWx').checked=pay.wx!==false;
+  document.getElementById('payAli').checked=pay.ali!==false;
+  document.getElementById('payCard').checked=pay.card!==false;
+  document.getElementById('payBalance').checked=pay.balance!==false;
+  document.getElementById('payMix').checked=pay.mix!==false;
   refreshStaffHint();
 }
 function parseFullReduce(txt){
@@ -1090,11 +1139,11 @@ function renderProducts(){
   });
   if(!list.length){grid.innerHTML='<div class="empty">暂无商品，请到「商品管理」添加</div>';return;}
   grid.innerHTML=list.map(p=>`
-    <div class="prod ${p.stock<=0?'out':''}" onclick="addToCart('${p.id}')">
+    <div class="prod ${(!p.unlimited&&p.stock<=0)?'out':''}" onclick="addToCart('${p.id}')">
       <div class="emoji">${p.emoji||'📦'}</div>
       <div class="pn">${p.name}</div>
       <div class="pp">${money(p.price)}</div>
-      <div class="ps">${p.stock<=0?'缺货':('库存 '+p.stock+p.unit)}</div>
+      <div class="ps">${p.unlimited?'库存无限':(p.stock<=0?'缺货':('库存 '+p.stock+p.unit))}</div>
     </div>`).join('');
 }
 function setCat(c){curCat=c;renderProducts();}
@@ -1110,9 +1159,10 @@ function addByBarcode(){
 let cart=[]; // {pid,name,price,qty,unit,emoji}
 function addToCart(pid){
   const p=S.products.find(x=>x.id===pid);if(!p)return;
-  if(p.stock<=0){toast(p.name+' 缺货');return;}
+  const unlim=!!p.unlimited;
+  if(!unlim&&p.stock<=0){toast(p.name+' 缺货');return;}
   const ex=cart.find(c=>c.pid===pid);
-  if(ex){if(ex.qty>=p.stock){toast('库存不足');return;}ex.qty++;}
+  if(ex){if(!unlim&&ex.qty>=p.stock){toast('库存不足');return;}ex.qty++;}
   else cart.push({pid:p.id,name:p.name,price:p.price,qty:1,unit:p.unit,emoji:p.emoji});
   renderCart();
 }
@@ -1121,7 +1171,7 @@ function changeQty(pid,d){
   const p=S.products.find(x=>x.id===pid);
   c.qty+=d;
   if(c.qty<=0)cart=cart.filter(x=>x.pid!==pid);
-  else if(p&&c.qty>p.stock){c.qty=p.stock;toast('已达库存上限');}
+  else if(p&&!p.unlimited&&c.qty>p.stock){c.qty=p.stock;toast('已达库存上限');}
   renderCart();
 }
 function removeFromCart(pid){cart=cart.filter(x=>x.pid!==pid);renderCart();}
@@ -1208,6 +1258,7 @@ function renderCart(){
   calcChange();
   updateMobileCartBar();
   updateHoldBadge();
+  renderPayGrid();
 }
 function calcChange(){
   const pay=window._pay||0;
@@ -1218,31 +1269,87 @@ function fillMemberSelect(){
   const sel=document.getElementById('cartMember');
   sel.innerHTML='<option value="">散客（无会员）</option>'+S.members.map(m=>`<option value="${m.id}">${m.name}（积分${m.points}｜余额${money(m.balance)}）</option>`).join('');
 }
+
+/* ============ 支付方式（收银台） ============ */
+/* k 与订单里的 method 一一对应；balance = 会员卡余额 */
+const PAY_DEF=[
+  {k:'cash',   t:'现金',   cls:'pay-cash'},
+  {k:'wx',     t:'微信',   cls:'pay-wx'},
+  {k:'ali',    t:'支付宝', cls:'pay-ali'},
+  {k:'card',   t:'银行卡', cls:'pay-card'},
+  {k:'balance',t:'卡余额', cls:'pay-bal'}
+];
+function methodLabel(m){
+  const d=PAY_DEF.find(p=>p.k===m);
+  /* 报表 / 交班的拆分明细用的是短键 bal（不是 balance），这里必须一起映射，
+     否则「支付方式占比」会把卡余额显示成一个光秃秃的 "bal" */
+  return d?d.t:({mix:'组合',bal:'卡余额'}[m]||m);
+}
+/* 收银台当前选中的会员 + 可用余额 */
+function cartMember(){
+  const el=document.getElementById('cartMember');
+  const id=el?el.value:'';
+  const m=id?(S.members.find(x=>x.id===id)||null):null;
+  return {id,m,bal:m?Math.max(0,Number(m.balance)||0):0};
+}
+/* 按设置里的开关渲染支付按钮；卡余额需选中且有余额才可点 */
+function renderPayGrid(){
+  const c=payCfg();
+  const el=document.getElementById('payGrid');
+  if(!el)return;
+  const cm=cartMember();
+  el.innerHTML=PAY_DEF.filter(p=>c[p.k]!==false).map(p=>{
+    const ok=(p.k!=='balance')||(cm.m&&cm.bal>0);
+    return `<button class="${p.cls}"${ok?'':' disabled'} onclick="checkout('${p.k}')">${p.t}</button>`;
+  }).join('');
+  const mb=document.getElementById('mixBtn');
+  if(mb)mb.classList.toggle('hidden',c.mix===false);
+  const hint=document.getElementById('payBalHint');
+  if(hint){
+    if(c.balance===false)hint.textContent='';
+    else if(!cm.m)hint.textContent='选择会员后可用「卡余额」支付';
+    else if(cm.bal>0)hint.textContent=cm.m.name+' 卡余额 '+money(cm.bal)+'　可用「卡余额」付清，或在「组合支付」里手动填金额';
+    else hint.textContent=cm.m.name+' 卡余额为 0，可到「会员」页充值';
+  }
+}
 function checkout(method){
   if(!cart.length){toast('购物清单为空');return;}
   if(requireLogin()){toast('请先登录账号');openLoginGate();return;}
-  let t=calcTotals();
-  let pay=t.pay;
-  let memberId=document.getElementById('cartMember').value;
-  let member=null;
-  if(memberId){member=S.members.find(m=>m.id===memberId);}
-  // 余额抵扣
+  if(payCfg()[method]===false){toast(methodLabel(method)+' 已在「设置 → 收银台支付方式」里关闭');return;}
+  const t=calcTotals();
+  const pay=t.pay;
+  const cm=cartMember();
   let balanceUsed=0;
-  if(member&&member.balance>0){
-    const use=Math.min(member.balance,pay);
-    if(use>0){
-      if(confirm(`${member.name} 当前余额 ${money(member.balance)}，是否抵扣 ${money(use)}？\n点击确定用余额支付，剩余用${methodLabel(method)}。`)){
-        member.balance=(Number(member.balance)-use).toFixed(2);
-        pay=pay-use;
-        balanceUsed=use;
-        save();
-      }
+
+  if(method==='balance'){
+    /* 明确的「卡余额支付」：整单用会员余额扣 */
+    if(!cm.m){toast('请先在收银台选择会员，才能用卡余额支付');return;}
+    if(cm.bal<=0){toast(cm.m.name+' 的卡余额为 0，可到「会员」页充值');return;}
+    balanceUsed=Math.round(Math.min(cm.bal,pay)*100)/100;
+    if(cm.bal+0.005<pay){
+      const rest=Math.round((pay-balanceUsed)*100)/100;
+      if(!confirm(cm.m.name+' 卡余额 '+money(cm.bal)+'，不足以付清 '+money(pay)+'，还差 '+money(rest)+'。\n\n'
+        +'点「确定」→ 先用卡余额抵扣 '+money(balanceUsed)+'，剩余 '+money(rest)+' 在组合支付里手动选择支付方式。\n'
+        +'点「取消」→ 取消本次卡余额支付。'))return;
+      window._balanceUsed=balanceUsed;
+      openMixModal();
+      return;
+    }
+  }else if(method!=='mix'&&cm.m&&cm.bal>0){
+    /* 其他方式：沿用「可选先用余额抵扣」的行为 */
+    const use=Math.round(Math.min(cm.bal,pay)*100)/100;
+    if(use>0&&confirm(cm.m.name+' 卡余额 '+money(cm.bal)+'，是否先用卡余额抵扣 '+money(use)+'？\n\n'
+      +'点「确定」→ 余额抵扣，剩余用'+methodLabel(method)+'收款。\n'
+      +'点「取消」→ 不用余额，全额走'+methodLabel(method)+'。')){
+      balanceUsed=use;
     }
   }
+  /* 注意：余额真正扣减统一放在 finalizeOrder 里 —— 否则上面「实收不足 return」会扣了钱却没生成订单 */
   window._balanceUsed=balanceUsed;
   if(method==='cash'){
     const recv=parseFloat(document.getElementById('cashReceived').value||0)||0;
-    if(recv<pay){toast('实收现金不足，还差 '+money(pay-recv));return;}
+    const need=Math.round(Math.max(0,pay-balanceUsed)*100)/100;
+    if(recv<need-0.005){toast('实收现金不足，还差 '+money(need-recv));return;}
   }
   finalizeOrder(method,null);
 }
@@ -1256,17 +1363,18 @@ async function finalizeOrder(method,breakdown){
   const balanceUsed=Math.min(window._balanceUsed||0,t.pay);
   window._balanceUsed=0;
   const orderId='NO'+String(S.seq++).padStart(6,'0');
-  // 扣库存 + 写销售出库流水
+  // 扣库存 + 写销售出库流水（库存无限的商品跳过：不扣减、也不写流水）
   for(const c of cart){
     const p=S.products.find(x=>x.id===c.pid);
     if(p){
+      if(p.unlimited)continue;
       const before=Number(p.stock)||0;
       p.stock=Math.max(0,before-c.qty);
       addStockLog({type:'sale',pid:p.id,name:p.name,qty:-c.qty,cost:Number(p.cost)||0,
         before,after:p.stock,note:'销售单 '+orderId});
     }
   }
-  // 会员积分 / 累计消费
+  // 会员积分 / 累计消费 / 卡余额扣减
   let gained=0;
   if(member){
     const rate=Number(cardCfg().pointRate);
@@ -1274,13 +1382,23 @@ async function finalizeOrder(method,breakdown){
     member.points=(Number(member.points)||0)+gained;
     member.totalSpent=(Number(member.totalSpent)||0)+t.pay;
     member.visits=(Number(member.visits)||0)+1;
+    if(balanceUsed>0){
+      member.balance=Math.max(0,(Number(member.balance)||0)-balanceUsed).toFixed(2);
+    }
+  }
+  /* 拆分明细：余额抵扣也要能进报表 / 交班统计，不能整笔都算成现金 */
+  let bdOut=breakdown||null;
+  if(!bdOut&&balanceUsed>0){
+    bdOut={cash:0,wx:0,ali:0,card:0,bal:balanceUsed};
+    const key=(method==='balance')?'bal':method;
+    bdOut[key]=(bdOut[key]||0)+Math.round((t.pay-balanceUsed)*100)/100;
   }
   const order={id:orderId,time:new Date().toISOString(),
     items:cart.map(c=>({name:c.name,price:c.price,qty:c.qty,unit:c.unit})),
     subtotal:sub,tax:tax,discount:totalDisc,total:t.pay,pay:Math.max(0,t.pay-balanceUsed),balanceUsed:balanceUsed,
     promo:{fullCut:t.fullCut,memberCut:t.memberCut,manual:t.manual,roundCut:t.roundCut,
       fullHit:t.fullHit,level:t.member?t.lv.name:null,rate:t.mRate},
-    method:method,payBreakdown:breakdown||null,memberId:memberId||null,memberName:member?member.name:null,
+    method:method,payBreakdown:bdOut,memberId:memberId||null,memberName:member?member.name:null,
     memberGain:gained,phone:phone||null,operator:currentUser(),refunded:false};
   S.orders.unshift(order);
   save();
@@ -1292,8 +1410,8 @@ async function finalizeOrder(method,breakdown){
   crReset.value='';delete crReset.dataset.manual;
   document.getElementById('cartPhone').value='';
   document.getElementById('cartPhoneTip').textContent='';
-  renderCart();fillMemberSelect();updateSmsBadge();
-  toast('收款成功 '+money(order.pay&&order.pay!==order.total?order.pay:order.total));
+  renderCart();fillMemberSelect();renderPayGrid();updateSmsBadge();
+  toast(order.pay>0.005?('收款成功 '+money(order.pay)):('收款成功 · 卡余额已扣 '+money(order.total)));
 
   // 会员消费短信
   let smsRec=null;
@@ -1317,28 +1435,78 @@ async function finalizeOrder(method,breakdown){
     },150);
   },300);
 }
-/* 组合支付 */
+/* 组合支付 / 拆分收款：手动填写每种方式各收多少（含卡余额） */
+function mixAmount(id){
+  const el=document.getElementById(id);
+  return el?Math.max(0,parseFloat(el.value||0)||0):0;
+}
 function openMixModal(){
   if(!cart.length){toast('购物清单为空');return;}
   const pay=window._pay||0;
+  const c=payCfg();
+  const cm=cartMember();
   document.getElementById('mixTotal').textContent=money(pay);
   document.getElementById('mixNeed').textContent=pay.toFixed(2);
-  ['mixCash','mixWx','mixAli','mixCard'].forEach(i=>document.getElementById(i).value='');
-  mixCalc();openModal('mixModal');
+  const show=(id,on)=>{const el=document.getElementById(id);if(el)el.style.display=on?'':'none';};
+  show('mixCashField',c.cash!==false);
+  show('mixWxField',c.wx!==false);
+  show('mixAliField',c.ali!==false);
+  show('mixCardField',c.card!==false);
+  show('mixBalField',c.balance!==false);
+  ['mixCash','mixWx','mixAli','mixCard','mixBal'].forEach(i=>{const el=document.getElementById(i);if(el)el.value='';});
+  const av=document.getElementById('mixBalAvail');
+  if(av)av.textContent=cm.m?('可用 '+money(cm.bal)):'未选会员';
+  const bh=document.getElementById('mixHelp');
+  if(bh)bh.textContent=(c.balance===false)?'卡余额已在设置里关闭。'
+    :(cm.m?('卡余额：'+cm.m.name+' 当前可用 '+money(cm.bal)+'，填超了会提示。')
+          :'卡余额需要先在收银台选择会员。');
+  /* 从「卡余额不足」引导进来时，先把已定的余额抵扣额填好 */
+  const pre=window._balanceUsed||0;
+  if(pre>0&&c.balance!==false){
+    document.getElementById('mixBal').value=pre.toFixed(2);
+    window._balanceUsed=0;
+  }
+  mixCalc();
+  openModal('mixModal');
 }
 function mixCalc(){
-  const f=id=>parseFloat(document.getElementById(id).value||0)||0;
-  document.getElementById('mixPaid').textContent=(f('mixCash')+f('mixWx')+f('mixAli')+f('mixCard')).toFixed(2);
+  const pay=window._pay||0;
+  const c=payCfg();
+  let paid=0;
+  if(c.cash!==false)paid+=mixAmount('mixCash');
+  if(c.wx!==false)paid+=mixAmount('mixWx');
+  if(c.ali!==false)paid+=mixAmount('mixAli');
+  if(c.card!==false)paid+=mixAmount('mixCard');
+  if(c.balance!==false)paid+=mixAmount('mixBal');
+  paid=Math.round(paid*100)/100;
+  document.getElementById('mixPaid').textContent=paid.toFixed(2);
+  const diff=Math.round((pay-paid)*100)/100;
+  const row=document.getElementById('mixDiffRow');
+  if(row){
+    row.style.display=Math.abs(diff)>0.005?'':'none';
+    document.getElementById('mixDiff').textContent=money(Math.abs(diff));
+  }
 }
 function confirmMix(){
   const pay=window._pay||0;
-  const f=id=>parseFloat(document.getElementById(id).value||0)||0;
-  const bd={cash:f('mixCash'),wx:f('mixWx'),ali:f('mixAli'),card:f('mixCard')};
-  const paid=bd.cash+bd.wx+bd.ali+bd.card;
-  if(Math.abs(paid-pay)>0.005){toast('已收 '+money(paid)+'，与应付不符');return;}
-  closeModal('mixModal');finalizeOrder('mix',bd);
+  const c=payCfg();
+  const cm=cartMember();
+  const bd={cash:0,wx:0,ali:0,card:0,bal:0};
+  if(c.cash!==false)bd.cash=mixAmount('mixCash');
+  if(c.wx!==false)bd.wx=mixAmount('mixWx');
+  if(c.ali!==false)bd.ali=mixAmount('mixAli');
+  if(c.card!==false)bd.card=mixAmount('mixCard');
+  if(c.balance!==false)bd.bal=mixAmount('mixBal');
+  if(bd.bal>0.005){
+    if(!cm.m){toast('没有选择会员，不能用卡余额支付');return;}
+    if(bd.bal>cm.bal+0.005){toast(cm.m.name+' 卡余额只有 '+money(cm.bal)+'，不够抵扣 '+money(bd.bal));return;}
+  }
+  const paid=Math.round((bd.cash+bd.wx+bd.ali+bd.card+bd.bal)*100)/100;
+  if(Math.abs(paid-pay)>0.005){toast('已收 '+money(paid)+'，与应付 '+money(pay)+' 不符');return;}
+  window._balanceUsed=bd.bal;
+  closeModal('mixModal');
+  finalizeOrder('mix',bd);
 }
-function methodLabel(m){return {cash:'现金',wx:'微信',ali:'支付宝',card:'银行卡',mix:'组合'}[m]||m;}
 
 /* ============ 商品管理 ============ */
 function renderProductTable(){
@@ -1351,18 +1519,18 @@ function renderProductTable(){
     const cost=Number(p.cost)||0;
     const gross=Number(p.price)-cost;
     const rate=p.price>0?gross/p.price*100:0;
-    const low=Number(p.safe)>0&&Number(p.stock)<=Number(p.safe);
+    const low=!p.unlimited&&Number(p.safe)>0&&Number(p.stock)<=Number(p.safe);
     return `<tr>
-      <td>${p.emoji||'📦'} ${p.name}${low?' <span style="display:inline-block;padding:2px 8px;border-radius:999px;background:#fee2e2;color:#b91c1c;font-size:11px;font-weight:700">低库存</span>':''}</td>
+      <td>${p.emoji||'📦'} ${p.name}${low?' <span style="display:inline-block;padding:2px 8px;border-radius:999px;background:#fee2e2;color:#b91c1c;font-size:11px;font-weight:700">低库存</span>':''}${p.unlimited?' <span style="display:inline-block;padding:2px 8px;border-radius:999px;background:#ecfdf5;color:#047857;font-size:11px;font-weight:700">无限库存</span>':''}</td>
       <td>${p.barcode||'-'}</td>
       <td>${p.cat||'未分类'}</td>
       <td>${cost>0?money(cost):'-'}</td>
       <td>${money(p.price)}</td>
-      <td>${p.stock} ${p.unit||''}</td>
+      <td>${p.unlimited?'<span style="color:#047857;font-weight:700">无限</span>':(p.stock+' '+(p.unit||''))}</td>
       <td style="color:${gross>=0?'var(--ok)':'var(--danger)'};font-weight:600">${money(gross)}
         <div class="pill">${isFinite(rate)?rate.toFixed(0):0}%</div></td>
       <td style="text-align:right">
-        <button class="ghost" onclick="openStockIn('${p.id}')">入库</button>
+        <button class="ghost" onclick="openStockIn('${p.id}')"${p.unlimited?' disabled title="库存无限，无需入库"':''}>入库</button>
         <button class="ghost" onclick="openProductModal('${p.id}')">编辑</button>
         <button class="danger" onclick="delProduct('${p.id}')">删除</button>
       </td>
@@ -1370,7 +1538,8 @@ function renderProductTable(){
   }).join('');
 }
 function lowStockList(){
-  return S.products.filter(p=>Number(p.safe)>0&&Number(p.stock)<=Number(p.safe));
+  /* 无限库存的商品永远不预警 */
+  return S.products.filter(p=>!p.unlimited&&Number(p.safe)>0&&Number(p.stock)<=Number(p.safe));
 }
 function renderStockAlert(){
   const box=document.getElementById('stockAlert');if(!box)return;
@@ -1385,11 +1554,12 @@ function renderStockAlert(){
 function openProductModal(id){
   document.getElementById('prodModalTitle').textContent=id?'编辑商品':'新增商品';
   const EX=['pSku','pShortCode','pType','pSpec','pBrand','pMemberPrice'];
+  const un=document.getElementById('pUnlimited');
   if(id){
     const p=S.products.find(x=>x.id===id);
     document.getElementById('pId').value=p.id;document.getElementById('pName').value=p.name;
     document.getElementById('pBarcode').value=p.barcode||'';document.getElementById('pCat').value=p.cat||'';
-    document.getElementById('pPrice').value=p.price;document.getElementById('pStock').value=p.stock;
+    document.getElementById('pPrice').value=p.price;document.getElementById('pStock').value=Number(p.stock)||0;
     document.getElementById('pCost').value=p.cost||'';document.getElementById('pSafe').value=p.safe||0;
     document.getElementById('pUnit').value=p.unit||'件';document.getElementById('pEmoji').value=p.emoji||'';
     document.getElementById('pSku').value=p.sku||'';
@@ -1398,13 +1568,27 @@ function openProductModal(id){
     document.getElementById('pSpec').value=p.spec||'';
     document.getElementById('pBrand').value=p.brand||'';
     document.getElementById('pMemberPrice').value=(p.memberPrice||p.memberPrice===0)?p.memberPrice:'';
+    un.checked=!!p.unlimited;
   }else{
     ['pId','pName','pBarcode','pCat','pEmoji','pCost'].forEach(i=>document.getElementById(i).value='');
     EX.forEach(i=>document.getElementById(i).value='');
     document.getElementById('pPrice').value='';document.getElementById('pStock').value='0';
     document.getElementById('pSafe').value='0';document.getElementById('pUnit').value='件';
+    un.checked=false;
   }
+  onUnlimitedToggle();
   openModal('prodModal');
+}
+/* 「库存无限」勾选后：库存/安全库存输入框置灰，明确告诉用户这两个值不生效了 */
+function onUnlimitedToggle(){
+  const box=document.getElementById('pUnlimited');
+  if(!box)return;
+  const on=!!box.checked;
+  const si=document.getElementById('pStock'),ss=document.getElementById('pSafe');
+  if(si)si.disabled=on;
+  if(ss)ss.disabled=on;
+  const hint=document.getElementById('pUnlimitedHint');
+  if(hint)hint.style.display=on?'':'none';
 }
 function saveProduct(){
   const name=document.getElementById('pName').value.trim();
@@ -1412,10 +1596,15 @@ function saveProduct(){
   if(!name||isNaN(price)){toast('请填写名称和有效单价');return;}
   const id=document.getElementById('pId').value;
   const mpRaw=document.getElementById('pMemberPrice').value.trim();
+  const unBox=document.getElementById('pUnlimited');
+  const unlimited=!!(unBox&&unBox.checked);
   const data={name,barcode:document.getElementById('pBarcode').value.trim(),cat:document.getElementById('pCat').value.trim()||'未分类',
     price,cost:parseFloat(document.getElementById('pCost').value||0)||0,
-    stock:parseInt(document.getElementById('pStock').value||0),
+    /* 勾了「库存无限」时数字照样存下来（输入框只是置灰）——
+       一旦取消勾选，就按原来的数字继续管库存，不会突然变成 0 而「缺货」 */
+    stock:parseInt(document.getElementById('pStock').value||0)||0,
     safe:parseInt(document.getElementById('pSafe').value||0)||0,
+    unlimited,
     unit:document.getElementById('pUnit').value.trim()||'件',emoji:document.getElementById('pEmoji').value.trim(),
     sku:document.getElementById('pSku').value.trim(),
     shortCode:document.getElementById('pShortCode').value.trim(),
@@ -1490,6 +1679,7 @@ function refundOrder(){
   for(const i of o.items){
     const p=S.products.find(x=>x.name===i.name);
     if(p){
+      if(p.unlimited)continue;   // 无限库存本来就没扣，也就没有回补
       const before=Number(p.stock)||0;
       p.stock=before+i.qty;
       addStockLog({type:'cancel',pid:p.id,name:p.name,qty:i.qty,cost:Number(p.cost)||0,
@@ -1502,10 +1692,15 @@ function refundOrder(){
       m.points=Math.max(0,(Number(m.points)||0)-(Number(o.memberGain)||0));
       m.totalSpent=Math.max(0,(Number(m.totalSpent)||0)-(Number(o.total)||0));
       m.visits=Math.max(0,(Number(m.visits)||0)-1);
+      if(Number(o.balanceUsed)>0){
+        m.balance=((Number(m.balance)||0)+Number(o.balanceUsed)).toFixed(2);
+      }
     }
   }
   o.refunded=true;save();
-  closeModal('orderModal');renderOrders();renderProducts();renderProductTable();toast('已退款，库存已回补');
+  closeModal('orderModal');renderOrders();renderProducts();renderProductTable();
+  renderPayGrid();renderMembers();
+  toast('已退款，库存已回补'+(Number(o.balanceUsed)>0?('，卡余额已退回 '+money(o.balanceUsed)):''));
 }
 function fmtTime(iso){const d=new Date(iso);return d.toLocaleString('zh-CN',{hour12:false});}
 
@@ -1521,7 +1716,7 @@ function renderReports(){
   const body=document.getElementById('reportBody');
   const byMethod={};
   list.forEach(o=>{
-    if(o.method==='mix'&&o.payBreakdown){for(const k of ['cash','wx','ali','card'])if(o.payBreakdown[k])byMethod[k]=(byMethod[k]||0)+o.payBreakdown[k];}
+    if(o.payBreakdown){for(const k of ['cash','wx','ali','card','bal'])if(o.payBreakdown[k])byMethod[k]=(byMethod[k]||0)+o.payBreakdown[k];}
     else byMethod[o.method]=(byMethod[o.method]||0)+o.total;
   });
   const prodStat={};list.forEach(o=>o.items.forEach(i=>{prodStat[i.name]=(prodStat[i.name]||{qty:0,amt:0});prodStat[i.name].qty+=i.qty;prodStat[i.name].amt+=i.price*i.qty;}));
@@ -1638,25 +1833,30 @@ function addStockLog(o){
 }
 function fillStockProdSelect(){
   const sel=document.getElementById('siProd');
-  sel.innerHTML=S.products.map(p=>`<option value="${p.id}">${escapeHtml(p.name)}（库存 ${p.stock}${p.unit?(' '+p.unit):''}）</option>`).join('')
+  sel.innerHTML=S.products.filter(p=>!p.unlimited).map(p=>`<option value="${p.id}">${escapeHtml(p.name)}（库存 ${p.stock}${p.unit?(' '+p.unit):''}）</option>`).join('')
     ||'<option value="">请先添加商品</option>';
 }
 function openStockIn(pid){
-  if(!S.products.length){toast('请先在「商品管理」中新增商品');return;}
+  if(!S.products.length){toast('请先在「商品管理」中新增商品');return false;}
+  if(!S.products.some(p=>!p.unlimited)){
+    toast('商品都是「库存无限」，无需入库/出库。可在「商品管理 → 编辑」里取消该选项');
+    return false;
+  }
   _stockMode='in';_stockCart=[];
   document.getElementById('siTitle').textContent='商品入库';
   document.getElementById('siSub').textContent='入库增加库存，并可用本次进价更新商品成本';
   fillStockProdSelect();
+  if(pid&&!document.querySelector('#siProd option[value="'+pid+'"]'))pid='';
   if(pid){document.getElementById('siProd').value=pid;
     const p=S.products.find(x=>x.id===pid);
     if(p&&p.cost)document.getElementById('siCost').value=p.cost;}
   else document.getElementById('siCost').value='';
   document.getElementById('siNote').value='';document.getElementById('siQty').value='';
   renderStockCart();openModal('stockInModal');
+  return true;
 }
 function openStockOut(){
-  openStockIn();
-  if(!S.products.length)return;
+  if(!openStockIn())return;
   _stockMode='out';
   document.getElementById('siTitle').textContent='商品出库 / 报损';
   document.getElementById('siSub').textContent='出库/报损减少库存，用于破损、赠品、内部领用等';
@@ -1680,6 +1880,7 @@ function addStockItem(){
   const pid=document.getElementById('siProd').value;
   if(!pid){toast('请先选择商品');return;}
   const p=S.products.find(x=>x.id===pid);if(!p)return;
+  if(p.unlimited){toast(p.name+' 是「库存无限」，不用入库/出库');return;}
   const qty=parseInt(document.getElementById('siQty').value||0);
   if(!qty||qty<=0){toast('请输入有效数量');return;}
   const already=_stockCart.filter(r=>r.pid===pid).reduce((s,r)=>s+r.qty,0);
@@ -1696,6 +1897,7 @@ function doStockIn(){
   const note=document.getElementById('siNote').value.trim()||(_stockMode==='in'?'商品入库':'出库/报损');
   _stockCart.forEach(r=>{
     const p=S.products.find(x=>x.id===r.pid);if(!p)return;
+    if(p.unlimited)return;   // 无限库存的商品不动数字、不写流水
     const before=Number(p.stock)||0;
     p.stock=Math.max(0,before+(_stockMode==='in'?r.qty:-r.qty));
     if(_stockMode==='in'&&r.cost>0)p.cost=r.cost;
@@ -1708,8 +1910,10 @@ function doStockIn(){
   toast(_stockMode==='in'?'入库完成':'出库完成');
 }
 function openStockCheck(){
+  const list=S.products.filter(p=>!p.unlimited);
   if(!S.products.length){toast('暂无商品可盘点');return;}
-  document.getElementById('scRows').innerHTML=S.products.map(p=>`
+  if(!list.length){toast('商品都是「库存无限」，无需盘点');return;}
+  document.getElementById('scRows').innerHTML=list.map(p=>`
     <div class="row" style="justify-content:space-between;align-items:center;gap:8px;border:1px solid var(--line);
       border-radius:10px;padding:8px 10px;margin-bottom:6px">
       <div><b>${escapeHtml(p.name)}</b> <span class="pill">账面 ${p.stock} ${p.unit||''}</span></div>
@@ -1725,7 +1929,7 @@ function doStockCheck(){
   let n=0;
   inputs.forEach(inp=>{
     if(inp.value==='')return;
-    const p=S.products.find(x=>x.id===inp.dataset.pid);if(!p)return;
+    const p=S.products.find(x=>x.id===inp.dataset.pid);if(!p||p.unlimited)return;
     const real=parseInt(inp.value||0)||0;
     const before=Number(p.stock)||0;
     if(real===before)return;
@@ -2501,6 +2705,19 @@ function saveSettings(){
   p.fullReduce=parseFullReduce(document.getElementById('pmFull').value);
   const lv=parseLevels(document.getElementById('lvRows').value);
   if(lv)S.shop.levels=lv;
+  const pay=payCfg();
+  pay.cash=document.getElementById('payCash').checked;
+  pay.wx=document.getElementById('payWx').checked;
+  pay.ali=document.getElementById('payAli').checked;
+  pay.card=document.getElementById('payCard').checked;
+  pay.balance=document.getElementById('payBalance').checked;
+  pay.mix=document.getElementById('payMix').checked;
+  /* 至少留一种收款方式，否则收银台会没法收款 */
+  if(!PAY_DEF.some(p=>pay[p.k]!==false)&&pay.mix===false){
+    pay.cash=true;
+    document.getElementById('payCash').checked=true;
+    toast('至少保留一种支付方式，已自动保留「现金」');
+  }
   renderHeader();renderLogoPreview();
   save();
   if(document.getElementById('cartList'))renderCart();
@@ -2579,13 +2796,13 @@ function bkBuildXLSX(sheets){
 
 /* ============ 备份中心：表定义与导出 ============ */
 const BK_TABLES={
-  products:{name:'商品',cols:[['name','名称'],['sku','商品编号'],['barcode','条码'],['shortCode','简码'],['cat','分类'],['ptype','类型'],['spec','规格'],['price','售价'],['memberPrice','会员价'],['cost','进价'],['stock','库存'],['safe','安全库存'],['unit','单位'],['brand','品牌'],['emoji','图标']],get:()=>S.products},
+  products:{name:'商品',cols:[['name','名称'],['sku','商品编号'],['barcode','条码'],['shortCode','简码'],['cat','分类'],['ptype','类型'],['spec','规格'],['price','售价'],['memberPrice','会员价'],['cost','进价'],['stock','库存'],['safe','安全库存'],['unlimited','库存无限'],['unit','单位'],['brand','品牌'],['emoji','图标']],get:()=>S.products},
   members:{name:'会员',cols:[['no','卡号'],['name','姓名'],['phone','手机号'],['points','积分'],['balance','余额'],['totalSpent','累计消费'],['visits','到店次数'],['source','开卡方式'],['createdAt','开卡时间']],get:()=>S.members},
   orders:{name:'订单',cols:[['id','单号'],['time','时间'],['memberName','会员'],['phone','手机号'],['subtotal','小计'],['tax','税额'],['discount','优惠合计'],['total','应收'],['pay','实收'],['balanceUsed','余额抵扣'],['methodName','支付方式'],['operator','收银员'],['refundedName','已退款']],get:()=>S.orders.map(o=>Object.assign({},o,{methodName:methodLabel(o.method),refundedName:o.refunded?'是':'否',time:fmtTime(o.time)}))},
   orderItems:{name:'订单明细',cols:[['orderId','单号'],['time','时间'],['name','商品'],['price','单价'],['qty','数量'],['unit','单位'],['amount','金额']],get:()=>{const a=[];S.orders.forEach(o=>(o.items||[]).forEach(i=>a.push({orderId:o.id,time:fmtTime(o.time),name:i.name,price:i.price,qty:i.qty,unit:i.unit,amount:Number((i.price*i.qty).toFixed(2))})));return a;}},
   stockLog:{name:'库存流水',cols:[['time','时间'],['typeName','类型'],['name','商品'],['qty','变动'],['cost','进价'],['before','变动前'],['after','变动后'],['note','备注'],['staff','操作员']],get:()=>S.stockLog.map(l=>Object.assign({},l,{typeName:(STOCK_TYPE[l.type]||['变动'])[0],time:fmtTime(l.time)}))},
   smsLog:{name:'短信记录',cols:[['time','时间'],['name','姓名'],['phone','手机号'],['typeName','类型'],['statusName','状态'],['content','内容'],['error','备注']],get:()=>S.smsLog.map(l=>Object.assign({},l,{typeName:smsTypeLabel(l.type),statusName:(SMS_STATUS[l.status]||[l.status])[0],time:fmtTime(l.time)}))},
-  shifts:{name:'交班记录',cols:[['id','交班单号'],['time','时间'],['count','订单数'],['total','营业额'],['cash','现金'],['wx','微信'],['ali','支付宝'],['card','银行卡']],get:()=>(S.shifts||[]).map(s=>Object.assign({},s,{time:fmtTime(s.time),cash:(s.bd||{}).cash||0,wx:(s.bd||{}).wx||0,ali:(s.bd||{}).ali||0,card:(s.bd||{}).card||0}))},
+  shifts:{name:'交班记录',cols:[['id','交班单号'],['time','时间'],['count','订单数'],['total','营业额'],['cash','现金'],['wx','微信'],['ali','支付宝'],['card','银行卡'],['bal','卡余额']],get:()=>(S.shifts||[]).map(s=>Object.assign({},s,{time:fmtTime(s.time),cash:(s.bd||{}).cash||0,wx:(s.bd||{}).wx||0,ali:(s.bd||{}).ali||0,card:(s.bd||{}).card||0,bal:(s.bd||{}).bal||0}))},
 };
 function bkRows(key){
   const t=BK_TABLES[key];
@@ -2607,7 +2824,7 @@ function bkCSV(rows){
   }).join(',')).join('\r\n');
 }
 function bkPack(){
-  return {app:'通用收银台',version:'1.5.2',exportedAt:new Date().toISOString(),
+  return {app:'通用收银台',version:'1.5.3',exportedAt:new Date().toISOString(),
     shop:S.shop,products:S.products,members:S.members,orders:S.orders,
     shifts:S.shifts,stockLog:S.stockLog,smsLog:S.smsLog,holds:S.holds,
     seq:S.seq,cardSeq:S.cardSeq};
@@ -2638,7 +2855,7 @@ function expXLSX(){
     ['订单数',S.orders.length],
     ['库存流水',(S.stockLog||[]).length],
     ['短信记录',(S.smsLog||[]).length],
-    ['软件版本','通用收银台 1.5.2']
+    ['软件版本','通用收银台 1.5.3']
   ]});
   downloadBlob(bkBuildXLSX(sheets),'通用收银台数据_'+todayStr()+'.xlsx');
   toast('已导出 Excel（'+sheets.length+' 个工作表）');
@@ -3209,6 +3426,7 @@ const BK_FIELD_ALIAS={
   '售价':'price','单价':'price','价格':'price','零售价':'price','零售价格':'price','销售价':'price',
   '进价':'cost','成本':'cost','成本价':'cost','进货价':'cost','采购价':'cost',
   '库存':'stock','库存量':'stock','现存':'stock','安全库存':'safe','预警库存':'safe','单位':'unit','图标':'emoji',
+  '库存无限':'unlimited','无限库存':'unlimited','不限库存':'unlimited','库存类型':'unlimited',
   '商品编号':'sku','货品编号':'sku','sku':'sku','商品简码':'shortCode','简码':'shortCode','拼音码':'shortCode',
   '规格':'spec','型号':'spec','会员特价':'memberPrice','会员价':'memberPrice',
   '商品类型':'ptype','类型名称':'ptype','品牌':'brand','门店':'shopName','创建时间':'createdAt','建档时间':'createdAt',
@@ -3233,7 +3451,7 @@ const BK_EXTRA_LABELS={
   orderItems:['单号','订单号','时间','商品','商品名称','单价','数量','单位','金额','小计'],
   stockLog:['时间','类型','商品','商品名称','变动','进价','变动前','变动后','备注','操作员','小计'],
   smsLog:['时间','姓名','手机号','类型','状态','内容','备注','短信内容'],
-  shifts:['交班单号','时间','订单数','营业额','现金','微信','支付宝','银行卡','交班','操作员']
+  shifts:['交班单号','时间','订单数','营业额','现金','微信','支付宝','银行卡','卡余额','交班','操作员']
 };
 /* 在表格前若干行里找出最像表头的一行，并判断属于哪张表 */
 function bkFindHeader(rows,preferKey){
@@ -3275,7 +3493,7 @@ function bkUnwrapJson(o,fileName){
   return {arr:null,tables:null,hintName:titleHint};
 }
 /* 反向映射：中文标签 → 内部键值 */
-const BK_METHOD_REV={'现金':'cash','微信':'wx','支付宝':'ali','银行卡':'card','组合':'mix'};
+const BK_METHOD_REV={'现金':'cash','微信':'wx','支付宝':'ali','银行卡':'card','卡余额':'balance','组合':'mix'};
 const BK_STOCK_TYPE_REV={'入库':'in','出库/报损':'out','盘点调整':'check','销售出库':'sale','退货入库':'cancel'};
 const BK_SMS_STATUS_REV={'已发送':'sent','发送失败':'fail','本地记录':'local','发送中':'pending','未发送':'skip'};
 const BK_SMS_TYPE_REV={'开卡通知':'open','消费通知':'consume','充值通知':'topup','测试短信':'test'};
@@ -3513,7 +3731,8 @@ function renderImportPreview(){
     +'<option value="replace">覆盖（清空后按备份恢复，仅完整备份可用）</option></select>'
     +'<span class="pill">新商品若来源没有库存列，按</span>'
     +'<select id="impNoStock" style="width:auto" title="很多商品导出表没有库存列，按 0 计会导致这些商品显示「缺货」无法售出">'
-    +'<option value="9999">9999（不限库存，可正常销售）</option>'
+    +'<option value="unlimited">库存无限（推荐：不记库存，永远能卖）</option>'
+    +'<option value="9999">9999（记成数字库存，卖一件扣一件）</option>'
     +'<option value="0">0（缺货，需先入库）</option></select>'
     +'<button class="primary" onclick="doImport()">确认导入</button>'
     +'<button class="ghost" onclick="document.getElementById(\'impPreview\').innerHTML=\'\';_importQueue=[]">清除</button>'
@@ -3574,7 +3793,9 @@ function doImport(){
 function mergeRows(key,rows,list,stat){
   const num=v=>{const n=parseFloat(String(v==null?'':v).replace(/[^\d.\-]/g,''));return isFinite(n)?n:0;};
   const has=(o,k)=>o[k]!==undefined&&o[k]!==null&&String(o[k]).trim()!=='';
-  const noStock=!!(document.getElementById('impNoStock')&&document.getElementById('impNoStock').value==='9999');
+  const noStockRaw=document.getElementById('impNoStock')?document.getElementById('impNoStock').value:'unlimited';
+  const noStock=noStockRaw==='9999';
+  const noStockUnlimited=noStockRaw==='unlimited';
   rows.forEach(raw=>{
     const r=bkMapRow(key,raw);
     if(key==='products'){
@@ -3603,6 +3824,8 @@ function mergeRows(key,rows,list,stat){
       if(has(r,'cost'))data.cost=num(r.cost);
       if(has(r,'stock'))data.stock=parseInt(num(r.stock),10);
       if(has(r,'safe'))data.safe=parseInt(num(r.safe),10);
+      /* 来源表里带「库存无限」列时以它为准（是/否/true/1 都能认） */
+      if(has(r,'unlimited'))data.unlimited=isUnlimited(r.unlimited);
       if(has(r,'unit'))data.unit=String(r.unit).trim();
       if(has(r,'emoji'))data.emoji=String(r.emoji).trim();
       if(has(r,'sku'))data.sku=String(r.sku).trim();
@@ -3616,9 +3839,9 @@ function mergeRows(key,rows,list,stat){
       if(hit){
         Object.assign(hit,data);stat.skip++;
       }else{
-        // 新商品：补齐默认值；来源没有库存列时按用户选择（默认不限库存，否则会「缺货」卖不出去）
+        // 新商品：补齐默认值；来源没有库存列时按用户选择（默认库存无限，否则会「缺货」卖不出去）
         list.push(Object.assign({id:uid(),barcode:'',cat:'未分类',price:0,cost:0,
-          stock:noStock?9999:0,safe:0,unit:'件',emoji:''},data));
+          stock:noStock?9999:0,safe:0,unlimited:noStockUnlimited,unit:'件',emoji:''},data));
         stat.add++;
       }
     }else if(key==='members'){
@@ -3758,8 +3981,8 @@ function renderShift(){
   document.getElementById('shiftSince').textContent=S.lastShift?('自 '+fmtTime(S.lastShift)+' 起'):'尚未交班（统计全部历史）';
   const list=shiftScopeList();
   const sum=a=>a.reduce((s,o)=>s+o.total,0);
-  const bd={cash:0,wx:0,ali:0,card:0};
-  list.forEach(o=>{if(o.method==='mix'&&o.payBreakdown){for(const k in bd)bd[k]+=o.payBreakdown[k]||0;}else bd[o.method]+=o.total;});
+  const bd={cash:0,wx:0,ali:0,card:0,bal:0};
+  list.forEach(o=>{if(o.payBreakdown){for(const k in bd)bd[k]+=o.payBreakdown[k]||0;}else bd[o.method]+=o.total;});
   document.getElementById('shiftSummary').innerHTML=`
     <div class="stats" style="margin:0;grid-template-columns:repeat(auto-fit,minmax(120px,1fr))">
       <div class="stat"><div class="sl">笔数</div><div class="sv">${list.length}</div></div>
@@ -3768,17 +3991,18 @@ function renderShift(){
       <div class="stat"><div class="sl">微信</div><div class="sv">${money(bd.wx)}</div></div>
       <div class="stat"><div class="sl">支付宝</div><div class="sv">${money(bd.ali)}</div></div>
       <div class="stat"><div class="sl">银行卡</div><div class="sv">${money(bd.card)}</div></div>
+      <div class="stat"><div class="sl">卡余额</div><div class="sv">${money(bd.bal)}</div></div>
     </div>`;
   const tb=document.getElementById('shiftTable');
-  if(!S.shifts.length){tb.innerHTML='<tr><td colspan="8" class="empty">暂无交班记录</td></tr>';return;}
-  tb.innerHTML=S.shifts.map(s=>`<tr><td>${s.id}</td><td>${fmtTime(s.time)}</td><td>${s.count}</td><td>${money(s.total)}</td><td>${money(s.bd.cash)}</td><td>${money(s.bd.wx)}</td><td>${money(s.bd.ali)}</td><td>${money(s.bd.card)}</td></tr>`).join('');
+  if(!S.shifts.length){tb.innerHTML='<tr><td colspan="9" class="empty">暂无交班记录</td></tr>';return;}
+  tb.innerHTML=S.shifts.map(s=>`<tr><td>${s.id}</td><td>${fmtTime(s.time)}</td><td>${s.count}</td><td>${money(s.total)}</td><td>${money(s.bd.cash)}</td><td>${money(s.bd.wx)}</td><td>${money(s.bd.ali)}</td><td>${money(s.bd.card)}</td><td>${money(s.bd.bal||0)}</td></tr>`).join('');
 }
 function doShift(){
   const list=shiftScopeList();
   if(!list.length){toast('本班暂无订单');return;}
   const sum=a=>a.reduce((s,o)=>s+o.total,0);
-  const bd={cash:0,wx:0,ali:0,card:0};
-  list.forEach(o=>{if(o.method==='mix'&&o.payBreakdown){for(const k in bd)bd[k]+=o.payBreakdown[k]||0;}else bd[o.method]+=o.total;});
+  const bd={cash:0,wx:0,ali:0,card:0,bal:0};
+  list.forEach(o=>{if(o.payBreakdown){for(const k in bd)bd[k]+=o.payBreakdown[k]||0;}else bd[o.method]+=o.total;});
   const rec={id:'S'+String(S.shifts.length+1).padStart(3,'0'),time:new Date().toISOString(),count:list.length,total:sum(list),bd};
   S.shifts.unshift(rec);S.lastShift=rec.time;save();renderShift();
   document.getElementById('receipt').innerHTML=`
@@ -3792,6 +4016,7 @@ function doShift(){
     <div class="rl"><span>微信</span><span>${money(rec.bd.wx)}</span></div>
     <div class="rl"><span>支付宝</span><span>${money(rec.bd.ali)}</span></div>
     <div class="rl"><span>银行卡</span><span>${money(rec.bd.card)}</span></div>
+    <div class="rl"><span>卡余额</span><span>${money(rec.bd.bal||0)}</span></div>
     <hr><div style="text-align:center">交班完成，请核对账款</div>`;
   toast('交班完成：'+rec.count+' 笔，营收 '+money(rec.total));
   setTimeout(()=>window.print(),300);
@@ -3800,8 +4025,12 @@ function doShift(){
 /* ============ 键盘快捷键 ============ */
 document.addEventListener('keydown',e=>{
   const k=e.key;
-  if(['F1','F2','F3','F4','F9'].includes(k)){
-    if(activeTab==='pos'){e.preventDefault();if(k==='F9')openMixModal();else checkout({F1:'cash',F2:'wx',F3:'ali',F4:'card'}[k]);}
+  if(['F1','F2','F3','F4','F6','F9'].includes(k)){
+    if(activeTab==='pos'){
+      e.preventDefault();
+      if(k==='F9')openMixModal();
+      else checkout({F1:'cash',F2:'wx',F3:'ali',F4:'card',F6:'balance'}[k]);
+    }
     return;
   }
   if(e.target.tagName==='INPUT'&&e.target.id==='barcodeInput'&&k==='Enter'){e.preventDefault();addByBarcode();}
