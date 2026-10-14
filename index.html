@@ -859,7 +859,7 @@ exports.main_handler = async (event) => {
 
 <div class="toast" id="toast"></div>
 
-<!-- 登录门：收银员登录 / 账号登录 -->
+<!-- 登录门：账号登录（本机账号，不需要任何服务器） -->
 <div id="loginGate" class="hidden" style="position:fixed;inset:0;z-index:100;padding:20px;overflow:auto;
   background:linear-gradient(135deg,#1e3a8a,#7c3aed);display:flex;align-items:center;justify-content:center">
   <div class="card" style="width:min(420px,100%);padding:22px;margin:auto">
@@ -867,26 +867,11 @@ exports.main_handler = async (event) => {
       <div style="width:56px;height:56px;margin:0 auto 10px;border-radius:16px;background:var(--brand);color:#fff;
         display:flex;align-items:center;justify-content:center;font-size:24px;font-weight:700" id="loginLogo">收</div>
       <h3 style="margin:0" id="loginShop">通用收银台</h3>
-      <p class="pill" id="loginSub">请选择收银员并输入密码</p>
+      <p class="pill" id="loginSub">用手机号或邮箱登录</p>
     </div>
 
-    <div class="row" style="gap:8px;margin-bottom:14px">
-      <button id="gateTabStaff" style="flex:1" onclick="gateSetMode('staff')">收银员登录</button>
-      <button id="gateTabAcct" style="flex:1" onclick="gateSetMode('account')">账号登录</button>
-    </div>
-
-    <!-- ① 收银员登录（本机 PIN） -->
-    <div id="gatePaneStaff">
-      <div class="field"><label>收银员</label><select id="loginStaff"></select></div>
-      <div class="field"><label>密码 / PIN</label>
-        <input id="loginPin" type="password" inputmode="numeric" autocomplete="off"
-          placeholder="未设密码可留空" onkeydown="if(event.key==='Enter')doLogin()"></div>
-      <button class="primary" style="width:100%" onclick="doLogin()">进入收银台</button>
-      <p class="pill" style="text-align:center;margin-top:10px">默认账号「店长」未设密码，首次可直接登录</p>
-    </div>
-
-    <!-- ② 账号登录（手机号 / 邮箱；本机即可注册登录，不依赖任何服务器） -->
-    <div id="gatePaneAcct" class="hidden">
+    <!-- 账号登录（手机号 / 邮箱；本机即可注册登录，不依赖任何服务器） -->
+    <div id="gatePaneAcct">
       <div class="field"><label>手机号 / 邮箱</label>
         <input id="gateAcct" autocomplete="username" autocapitalize="off" spellcheck="false"
           placeholder="13800000000 或 you@example.com"></div>
@@ -929,13 +914,14 @@ exports.main_handler = async (event) => {
 <div id="staffModal" class="modal-bg hidden">
   <div class="modal" style="width:min(560px,100%)">
     <h3>员工与权限</h3>
-    <div class="switch-row"><input type="checkbox" id="stEnable" onchange="saveStaff()"> 启用收银员登录</div>
+    <div class="switch-row"><input type="checkbox" id="stEnable" onchange="saveStaff()"> 打开应用时要求登录账号</div>
     <div class="switch-row"><input type="checkbox" id="stLockDiscount" onchange="saveStaff()"> 仅店长可修改整单优惠</div>
-    <p class="cfg-help">密码留空表示该账号无需密码。权限：店长可管理商品/员工/清空数据；收银员仅可收款。</p>
+    <p class="cfg-help">这里只管「谁在收银」和权限，不用来登录 —— 打开应用时的登录用的是<b>账号登录</b>。</p>
+    <p class="cfg-help">权限：店长可管理商品 / 员工 / 清空数据；收银员仅可收款。</p>
     <div id="staffRows"></div>
     <div class="row" style="gap:6px;margin:10px 0">
       <input id="stNewName" placeholder="新员工姓名" style="flex:1">
-      <input id="stNewPin" placeholder="密码" style="max-width:110px">
+      <input id="stNewPin" placeholder="密码 / PIN" style="max-width:110px">
       <select id="stNewRole" style="width:auto">
         <option value="cashier">收银员</option>
         <option value="owner">店长</option>
@@ -944,7 +930,6 @@ exports.main_handler = async (event) => {
     </div>
     <div class="row" style="justify-content:flex-end">
       <button class="danger" onclick="appLogout()">退出登录</button>
-      <button class="ghost" onclick="switchStaff()">切换收银员</button>
       <button class="primary" onclick="closeModal('staffModal')">关闭</button>
     </div>
   </div>
@@ -1235,7 +1220,7 @@ function fillMemberSelect(){
 }
 function checkout(method){
   if(!cart.length){toast('购物清单为空');return;}
-  if(requireLogin()){toast('请先登录收银员账号');openLoginGate();return;}
+  if(requireLogin()){toast('请先登录账号');openLoginGate();return;}
   let t=calcTotals();
   let pay=t.pay;
   let memberId=document.getElementById('cartMember').value;
@@ -1798,53 +1783,25 @@ function currentStaff(){
 function currentUser(){return currentStaff().name||'店长';}
 function isOwner(){return currentStaff().role==='owner';}
 function requireLogin(){return !!(S.shop.loginRequired&&!SESSION);}
+/* 登录门 = 账号登录（本机账号）。收银员在「设置 → 员工与权限」里管理，不再单独设一道登录 */
 function openLoginGate(){
-  const sel=document.getElementById('loginStaff');if(!sel)return;
-  sel.innerHTML=staffList().map(s=>`<option value="${s.id}">${escapeHtml(s.name)}（${s.role==='owner'?'店长':'收银员'}）</option>`).join('');
-  // 记住上次登录的收银员，省一次选择
-  try{const last=localStorage.getItem('pos_last_staff')||'';if(last&&staffList().some(s=>s.id===last))sel.value=last;}catch(e){}
   document.getElementById('loginShop').textContent=S.shop.name;
   document.getElementById('loginLogo').textContent=(S.shop.name||'收')[0];
-  document.getElementById('loginPin').value='';
   acctLoad();gateRecall();                       // 回填「记住的账号密码」
   const g=document.getElementById('loginGate');if(g)g.classList.remove('hidden');
-  // 恢复上次用的那个 Tab（老板常用账号登录，收银员常用收银员登录）
-  try{const m=localStorage.getItem('pos_gate_mode');if(m==='account'||m==='staff')_gateMode=m;}catch(e){}
-  gateSetMode(_gateMode);
+  gateRenderState();
   setTimeout(()=>{
-    const el=_gateMode==='account'
-      ? (gateVal('gateAcct')?document.getElementById('gatePass'):document.getElementById('gateAcct'))
-      : document.getElementById('loginPin');
+    const el=gateVal('gateAcct')?document.getElementById('gatePass'):document.getElementById('gateAcct');
     if(el)el.focus();
   },120);
 }
-function doLogin(){
-  const id=document.getElementById('loginStaff').value;
-  const s=staffList().find(x=>x.id===id);
-  if(!s){toast('请选择收银员');return;}
-  const pin=(document.getElementById('loginPin').value||'').trim();
-  if(s.pin&&String(s.pin)!==pin){toast('密码错误');return;}
-  SESSION={staffId:s.id,loginAt:new Date().toISOString(),via:'staff'};
-  try{localStorage.setItem('pos_last_staff',s.id);}catch(e){}
-  const g=document.getElementById('loginGate');if(g)g.classList.add('hidden');
-  renderHeader();refreshStaffHint();toast('欢迎，'+s.name);
-}
-
-/* ---------------- 登录门：账号登录（手机号 / 邮箱，多端同步） ---------------- */
-let _gateMode='staff';
-function gateSetMode(m){
-  _gateMode=(m==='account')?'account':'staff';
-  try{localStorage.setItem('pos_gate_mode',_gateMode);}catch(e){}
-  const isS=_gateMode==='staff';
-  const bs=document.getElementById('gateTabStaff'),ba=document.getElementById('gateTabAcct');
-  if(bs){bs.className=isS?'primary':'ghost';bs.style.flex='1';}
-  if(ba){ba.className=isS?'ghost':'primary';ba.style.flex='1';}
-  const ps=document.getElementById('gatePaneStaff'),pa=document.getElementById('gatePaneAcct');
-  if(ps)ps.classList.toggle('hidden',!isS);
-  if(pa)pa.classList.toggle('hidden',isS);
+/* 保留给旧调用方：登录门现在只有账号登录一种方式 */
+function gateSetMode(){
+  const pa=document.getElementById('gatePaneAcct');
+  if(pa)pa.classList.remove('hidden');
   const sub=document.getElementById('loginSub');
-  if(sub)sub.textContent=isS?'请选择收银员并输入密码':'用手机号或邮箱登录（本机账号，不需要服务器）';
-  if(!isS)gateRenderState();
+  if(sub)sub.textContent='用手机号或邮箱登录（本机账号，不需要服务器）';
+  gateRenderState();
 }
 /* 「多端同步」折叠区里的状态提示；服务器地址是可选项，不填也能正常注册登录 */
 function gateRenderState(){
@@ -1863,7 +1820,7 @@ function gateRenderState(){
   if(!EMBED.ok){
     box.innerHTML='<div class="sync-card bad"><div class="sc-head"><span class="sync-dot bad"></span>'
       +'本机同步服务启动失败</div><div class="cfg-help">'+escapeHtml(EMBED.error||'未知错误')
-      +'</div><div class="cfg-help">重启应用可重试；或先用「收银员登录」进去，到设置页手动配置。</div></div>';
+      +'</div><div class="cfg-help">重启应用可重试；或先用「账号登录」进去，到设置页手动配置。</div></div>';
     return;
   }
   let h='<div class="sync-card ok"><div class="sc-head"><span class="sync-dot ok"></span>本机同步服务 已就绪</div>'
@@ -2160,7 +2117,14 @@ async function gateAcctRegister(){
     gateSyncBind(na.key,pass);
   }catch(e){gateMsg(e.message,true);}
 }
-function switchStaff(){closeModal('staffModal');openLoginGate();}
+/* 直接切换「当前收银员」—— 登录门只认账号，这里不再要求 PIN */
+function setOperator(id){
+  const s=staffList().find(x=>x.id===id);if(!s)return;
+  SESSION={staffId:s.id,loginAt:new Date().toISOString(),via:'switch'};
+  try{localStorage.setItem('pos_last_staff',s.id);}catch(e){}
+  renderStaffRows();refreshStaffHint();renderHeader();
+  toast('当前收银员：'+s.name);
+}
 function openStaffModal(){
   renderStaffRows();
   document.getElementById('stEnable').checked=!!S.shop.loginRequired;
@@ -2169,7 +2133,8 @@ function openStaffModal(){
 }
 function refreshStaffHint(){
   const h=document.getElementById('staffHint');
-  if(h)h.textContent=(S.shop.loginRequired?'已启用登录':'未启用登录')+' · '+staffList().length+' 个账号 · 当前 '+currentUser();
+  if(h)h.textContent=(S.shop.loginRequired?'打开时要求登录账号':'打开时不弹登录页')
+    +' · '+staffList().length+' 个账号 · 当前 '+currentUser();
 }
 function renderStaffRows(){
   const box=document.getElementById('staffRows');if(!box)return;
@@ -2181,7 +2146,9 @@ function renderStaffRows(){
         <span class="tag">${s.role==='owner'?'店长':'收银员'}</span>
         ${cur&&cur.id===s.id?'<span class="pill">当前</span>':''}</div>
       <div class="row" style="gap:6px;margin:0">
-        <input value="${escapeHtml(s.pin||'')}" placeholder="密码" style="width:90px"
+        ${(cur&&cur.id===s.id)?''
+          :`<button class="ghost sm" onclick="setOperator('${s.id}')">设为当前</button>`}
+        <input value="${escapeHtml(s.pin||'')}" placeholder="密码 / PIN" style="width:90px"
           onchange="setStaffPin('${s.id}',this.value)">
         <button class="danger" onclick="delStaff('${s.id}')">删除</button>
       </div>
@@ -2640,7 +2607,7 @@ function bkCSV(rows){
   }).join(',')).join('\r\n');
 }
 function bkPack(){
-  return {app:'通用收银台',version:'1.5.1',exportedAt:new Date().toISOString(),
+  return {app:'通用收银台',version:'1.5.2',exportedAt:new Date().toISOString(),
     shop:S.shop,products:S.products,members:S.members,orders:S.orders,
     shifts:S.shifts,stockLog:S.stockLog,smsLog:S.smsLog,holds:S.holds,
     seq:S.seq,cardSeq:S.cardSeq};
@@ -2671,7 +2638,7 @@ function expXLSX(){
     ['订单数',S.orders.length],
     ['库存流水',(S.stockLog||[]).length],
     ['短信记录',(S.smsLog||[]).length],
-    ['软件版本','通用收银台 1.5.1']
+    ['软件版本','通用收银台 1.5.2']
   ]});
   downloadBlob(bkBuildXLSX(sheets),'通用收银台数据_'+todayStr()+'.xlsx');
   toast('已导出 Excel（'+sheets.length+' 个工作表）');
@@ -4347,7 +4314,7 @@ function renderSyncBox(){
   }else{
     const locals=Object.keys(ACCTS).map(function(k){return ACCTS[k];});
     box.innerHTML=
-      '<p class="pill">本机账号：<b>不需要服务器</b>也能注册登录（收银员登录界面上就有「账号登录」入口）。'
+      '<p class="pill">本机账号：<b>不需要服务器</b>也能注册登录（打开应用时的登录界面上就有）。'
       +'想让手机 / 多台电脑看到同一份数据，再展开下面的「多端同步」。</p>'
       +(locals.length?('<div class="field"><label>本机已注册的账号（'+locals.length+' 个）</label>'
         +locals.map(function(r){
