@@ -135,6 +135,15 @@
   .status-sent{background:var(--ok)} .status-fail{background:var(--danger)}
   .status-local{background:#94a3b8} .status-pending{background:var(--warn)} .status-skip{background:#cbd5e1}
   .cfg-help{font-size:12px;color:var(--muted);line-height:1.65;margin:6px 0}
+  /* 设置页工具折叠 */
+  details.set-sec{border:1px solid var(--line);border-radius:10px;margin:10px 0 0;padding:0 12px}
+  details.set-sec+details.set-sec{margin-top:8px}
+  details.set-sec>summary{cursor:pointer;font-weight:700;padding:11px 0;list-style:none;
+    display:flex;align-items:center;user-select:none}
+  details.set-sec>summary::-webkit-details-marker{display:none}
+  details.set-sec>summary::after{content:'▸';margin-left:auto;transition:transform .15s;color:var(--muted)}
+  details.set-sec[open]>summary::after{transform:rotate(90deg)}
+  details.set-sec[open]>summary{border-bottom:1px dashed var(--line);margin-bottom:10px}
   code.inline{background:#f1f5f9;padding:1px 5px;border-radius:4px;font-size:12px;
     font-family:ui-monospace,Menlo,monospace;word-break:break-all}
   details.docbox{margin-top:8px;border:1px solid var(--line);border-radius:10px;padding:8px 12px;background:#fafbfc}
@@ -295,14 +304,16 @@
 
             <div class="field" style="margin-top:10px">
               <label>选择会员（积分 / 余额抵扣）</label>
-              <select id="cartMember" onchange="renderCart()"><option value="">散客（无会员）</option></select>
+              <select id="cartMember" onchange="onMemberPicked()"><option value="">散客（无会员）</option></select>
             </div>
 
             <div class="field">
-              <label>顾客手机号（输入自动识别会员 / 未开卡可现场开卡）</label>
+              <label>顾客姓名 / 手机号（输姓名或手机尾号都能自动识别会员）</label>
               <div class="row" style="gap:6px;margin:0">
-                <input id="cartPhone" inputmode="numeric" autocomplete="off" placeholder="选填，11 位手机号"
-                  oninput="onCartPhone()" style="flex:1;min-width:120px">
+                <input id="cartName" autocomplete="off" placeholder="姓名，如：张三"
+                  oninput="onCartQuery()" style="flex:1;min-width:100px">
+                <input id="cartPhone" inputmode="numeric" autocomplete="off" placeholder="手机号或尾号"
+                  oninput="onCartQuery()" style="flex:1;min-width:110px">
                 <button class="ghost" id="cartCardBtn" onclick="openCardModal()"
                   style="white-space:nowrap">🎫 消费开卡</button>
               </div>
@@ -410,8 +421,14 @@
 
     <!-- 设置 -->
     <section id="tab-settings" class="hidden">
-      <div class="card" style="padding:16px;max-width:640px">
-        <h3 style="margin-top:0">店铺设置</h3>
+      <div class="card" id="setCard" style="padding:16px;max-width:640px">
+        <div class="row" style="justify-content:space-between;align-items:center;margin:0 0 4px">
+          <h3 style="margin:0">店铺设置</h3>
+          <div class="row" style="gap:6px;margin:0">
+            <button class="ghost" onclick="foldAll(true)" style="padding:4px 10px">全部展开</button>
+            <button class="ghost" onclick="foldAll(false)" style="padding:4px 10px">全部收起</button>
+          </div>
+        </div>
         <div class="field"><label>店铺名称</label><input id="setName" oninput="saveSettings()"></div>
         <div class="field"><label>店铺Logo（显示在收银台与小票）</label>
           <input id="setLogo" type="file" accept="image/*" onchange="setLogoFromFile(this)">
@@ -848,8 +865,8 @@ exports.main_handler = async (event) => {
         等级表在「设置 → 会员等级与折扣」配置，格式 <code class="inline">等级名,消费门槛,折扣率%</code>，一行一条。</p>
       <p><b>员工与权限</b>：设置页可添加收银员账号并启用登录。店长可管理商品、员工与清空数据；
         收银员仅可收款。勾选「仅店长可修改整单优惠」后，收银员无法随意打折。</p>
-      <p><b>会员</b>：会员消费累计积分，可用余额抵扣；设置页可充值。</p>
-      <p><b>消费开卡</b>：收银台输入顾客手机号 → 自动识别老会员；未开卡时点「🎫 消费开卡」现场发卡，
+      <p><b>会员</b>：会员消费累计积分，可用余额抵扣；设置页可充值。设置页各工具段可点标题折叠收起（右上角可全部展开/收起）。</p>
+      <p><b>消费开卡</b>：收银台输入顾客<b>姓名或手机尾号</b>即可自动识别老会员（输完整手机号也行）；未开卡时点「🎫 消费开卡」现场发卡，
         可设开卡礼金与赠送积分，开卡后本次消费自动计入该会员。门槛、赠积分倍数、卡号前缀在「设置 → 会员卡」配置。</p>
       <p><b>短信通知</b>：开卡、消费、充值后可自动给顾客手机号发短信。默认「本地记录」通道仅作演示不入网；
         需要真实下发时，在「设置 → 短信通知」填入自己的 Webhook 地址（转发到腾讯云/阿里云短信），
@@ -987,7 +1004,7 @@ const DEF_S={
     sms:{enabled:true,channel:'local',webhook:'',sign:'',onOpen:true,onConsume:false,onTopup:false,
       templates:Object.assign({},DEF_SMS_TPL)}},
   products:[],members:[],orders:[],stockLog:[],shifts:[],smsLog:[],holds:[],
-  cardSeq:0,lastShift:null,seq:1,session:null
+  cardSeq:0,lastShift:null,seq:1,session:null,_del:{}
 };
 let S=JSON.parse(JSON.stringify(DEF_S));
 function normalize(){
@@ -1001,6 +1018,8 @@ function normalize(){
   if(!Array.isArray(S.shop.levels)||!S.shop.levels.length)S.shop.levels=JSON.parse(JSON.stringify(DEF_S.shop.levels));
   if(!Array.isArray(S.shop.staff)||!S.shop.staff.length)S.shop.staff=JSON.parse(JSON.stringify(DEF_S.shop.staff));
   ['products','members','orders','stockLog','shifts','smsLog','holds'].forEach(k=>{if(!Array.isArray(S[k]))S[k]=[];});
+  if(!S._del||typeof S._del!=='object')S._del={};
+  ['products','members','stockLog','smsLog','shifts','holds'].forEach(k=>{if(!Array.isArray(S._del[k]))S._del[k]=[];});
   S.seq=S.seq||1;
   S.cardSeq=Math.max(Number(S.cardSeq)||0,S.members.filter(m=>m.no).length);
   S.members.forEach(m=>{
@@ -1618,6 +1637,7 @@ function saveProduct(){
 }
 function delProduct(id){
   if(!confirm('确定删除该商品？'))return;
+  const p=S.products.find(x=>x.id===id);if(p)markDeleted('products',p);
   S.products=S.products.filter(x=>x.id!==id);save();renderProductTable();renderProducts();
 }
 function exportProducts(){
@@ -1807,7 +1827,18 @@ function saveMember(){
     totalSpent:0,visits:0,source:'手动新增'},data));
   save();closeModal('memModal');renderMembers();fillMemberSelect();toast('会员已保存');
 }
-function delMember(id){if(!confirm('删除会员？'))return;S.members=S.members.filter(x=>x.id!==id);save();renderMembers();fillMemberSelect();}
+/* 删除某条同步数组记录时登记墓碑：同步时云端仍存在的旧记录会被 syncUnion 当作「云端独有」拉回，
+   导致「删除不生效 / 删了又出现」。墓碑让合并逻辑跳过这些已删记录（双端都会记，删除可跨设备生效）。 */
+function markDeleted(key,rec){
+  if(!S._del)S._del={};
+  if(!Array.isArray(S._del[key]))S._del[key]=[];
+  const fa=SYNC_ARRAYS.find(a=>a[0]===key);const f=fa?fa[1]:null;
+  const k=f?String(f(rec)):String((rec&&(rec.id||rec.phone||rec.no||rec.name))||'');
+  if(!k)return;
+  if(!S._del[key].includes(k))S._del[key].push(k);
+  if(S._del[key].length>1000)S._del[key]=S._del[key].slice(-1000);  // 防止无限增长
+}
+function delMember(id){if(!confirm('删除会员？'))return;const m=S.members.find(x=>x.id===id);if(m)markDeleted('members',m);S.members=S.members.filter(x=>x.id!==id);save();renderMembers();fillMemberSelect();}
 function openTopup(id){const m=S.members.find(x=>x.id===id);if(!m)return;window._topupId=id;document.getElementById('topupName').textContent=(m.no?m.no+' · ':'')+m.name+' · 当前余额 '+money(m.balance)+(m.phone?(' · '+m.phone):' · 未留手机');document.getElementById('topupAmt').value='';document.getElementById('topupSms').checked=!!(smsCfg().enabled&&m.phone);openModal('topupModal');}
 async function doTopup(){
   const m=S.members.find(x=>x.id===window._topupId);if(!m)return;
@@ -2445,25 +2476,60 @@ function takeHold(id){
 function delHold(id){
   const h=S.holds.find(x=>x.id===id);if(!h)return;
   if(!confirm('删除挂单「'+h.note+'」？'))return;
+  markDeleted('holds',h);
   S.holds=S.holds.filter(x=>x.id!==id);save();renderHolds();updateHoldBadge();
 }
 
 /* ============ 消费开卡 ============ */
-function onCartPhone(){
-  const ph=(document.getElementById('cartPhone').value||'').replace(/\D/g,'');
-  document.getElementById('cartPhone').value=ph;
-  const tip=document.getElementById('cartPhoneTip');
-  const sel=document.getElementById('cartMember');
-  if(!ph){tip.textContent='';return;}
-  const m=S.members.find(x=>(x.phone||'')===ph);
-  if(m){
-    tip.innerHTML='✅ 已识别会员 <b>'+m.name+'</b>（'+(m.no||'—')+'）· 积分 '+m.points+' · 余额 '+money(m.balance);
-    sel.value=m.id;renderCart();
-  }else{
-    sel.value='';renderCart();
-    tip.innerHTML=ph.length>=11?'⚠️ 该手机号尚未开卡，点右侧「🎫 消费开卡」现场发卡':'继续输入完整手机号…';
-  }
+/* 会员识别：数字 → 手机尾号（含完整手机号）；非数字 → 姓名/卡号包含匹配 */
+function memberMatch(q){
+  q=(q||'').trim().toLowerCase();if(!q)return [];
+  const ms=S.members||[];
+  if(/^\d+$/.test(q))return ms.filter(m=>(m.phone||'').endsWith(q));
+  return ms.filter(m=>(m.name||'').toLowerCase().includes(q)||(m.no||'').toLowerCase().includes(q));
 }
+function setMemberTip(html){document.getElementById('cartPhoneTip').innerHTML=html||'';}
+/* 下拉选中会员 → 回填姓名/手机号，并提示会员信息 */
+function onMemberPicked(){
+  const sel=document.getElementById('cartMember');
+  const m=S.members.find(x=>x.id===sel.value);
+  document.getElementById('cartName').value=m?(m.name||''):'';
+  document.getElementById('cartPhone').value=m?(m.phone||''):'';
+  if(m)setMemberTip('✅ 已选会员 <b>'+m.name+'</b>（'+(m.no||'—')+' · 尾号'+(m.phone||'').slice(-4)+'）· 积分 '+m.points+' · 余额 '+money(m.balance));
+  else setMemberTip('');
+  renderCart();
+}
+/* 收银台会员识别统一入口：姓名 / 手机号 / 手机尾号均可 */
+function onCartQuery(){
+  const nameEl=document.getElementById('cartName'),phEl=document.getElementById('cartPhone');
+  const ph=(phEl.value||'').replace(/\D/g,'');phEl.value=ph;
+  const nm=(nameEl.value||'').trim();
+  const sel=document.getElementById('cartMember');
+  if(!nm&&!ph){setMemberTip('');return;}
+  let hits;
+  if(nm&&ph)hits=memberMatch(nm).filter(m=>memberMatch(ph).includes(m)); /* 两者都填 → 取交集 */
+  else hits=memberMatch(nm||ph);
+  if(hits.length===1){
+    const m=hits[0];
+    if(!nm)nameEl.value=m.name||'';
+    if(!ph)phEl.value=m.phone||'';
+    sel.value=m.id;
+    setMemberTip('✅ 已识别会员 <b>'+m.name+'</b>（'+(m.no||'—')+' · 尾号'+(m.phone||'').slice(-4)+'）· 积分 '+m.points+' · 余额 '+money(m.balance));
+    renderCart();return;
+  }
+  sel.value='';
+  if(hits.length>1){
+    setMemberTip('🔍 匹配到 '+hits.length+' 位会员：'
+      +hits.slice(0,4).map(m=>(m.name||'—')+'（尾号'+(m.phone||'').slice(-4)+'）').join('、')
+      +(hits.length>4?' …':'')+'，请在上方「选择会员」下拉里选');
+  }else if(ph){
+    setMemberTip(ph.length>=11?'⚠️ 该手机号尚未开卡，点右侧「🎫 消费开卡」现场发卡':'继续输入更多手机尾号…');
+  }else{
+    setMemberTip('没有找到姓名含「'+nm+'」的会员');
+  }
+  renderCart();
+}
+function onCartPhone(){onCartQuery();} /* 兼容旧调用（取单回填等） */
 function openCardModal(prefillPhone){
   const c=cardCfg();
   document.getElementById('cPhone').value=prefillPhone||document.getElementById('cartPhone').value||'';
@@ -2824,7 +2890,7 @@ function bkCSV(rows){
   }).join(',')).join('\r\n');
 }
 function bkPack(){
-  return {app:'通用收银台',version:'1.5.3',exportedAt:new Date().toISOString(),
+  return {app:'通用收银台',version:'1.5.4',exportedAt:new Date().toISOString(),
     shop:S.shop,products:S.products,members:S.members,orders:S.orders,
     shifts:S.shifts,stockLog:S.stockLog,smsLog:S.smsLog,holds:S.holds,
     seq:S.seq,cardSeq:S.cardSeq};
@@ -2855,7 +2921,7 @@ function expXLSX(){
     ['订单数',S.orders.length],
     ['库存流水',(S.stockLog||[]).length],
     ['短信记录',(S.smsLog||[]).length],
-    ['软件版本','通用收银台 1.5.3']
+    ['软件版本','通用收银台 1.5.4']
   ]});
   downloadBlob(bkBuildXLSX(sheets),'通用收银台数据_'+todayStr()+'.xlsx');
   toast('已导出 Excel（'+sheets.length+' 个工作表）');
@@ -4230,14 +4296,16 @@ async function syncReq(method,p,body){
 
 /* ------------------------------------------------- 合并（本机优先） */
 /* 远端独有的记录追加进来；两边都有的记录保留本机版本，不会把本机改动抹掉 */
-function syncUnion(local,remote,keyFn){
-  const out=Array.isArray(local)?local.slice():[];
+function syncUnion(local,remote,keyFn,tomb){
+  const tset=(tomb instanceof Set)?tomb:(Array.isArray(tomb)?new Set(tomb):null);
+  const out=Array.isArray(local)?local.slice().filter(x=>!(tset&&tset.has(keyFn(x)))):[];
   const seen=new Set(out.map(x=>keyFn(x)));
   let added=0;
   (Array.isArray(remote)?remote:[]).forEach(r=>{
     if(!r||typeof r!=='object')return;
     let k;try{k=keyFn(r);}catch(e){k=null;}
     if(k===undefined||k===null||k==='')return;
+    if(tset&&tset.has(k))return;          // 墓碑：本端/他端已删，云端这条不再拉回
     if(seen.has(k))return;
     out.push(r);seen.add(k);added++;
   });
@@ -4276,8 +4344,15 @@ function syncMergePayload(p){
   }
   SYNC_ARRAYS.forEach(([k,f])=>{
     if(!p||!Array.isArray(p[k]))return;
-    const r=syncUnion(S[k]||[],p[k],f);
-    if(r.added){S[k]=r.list;changed=true;}
+    const localTomb=new Set((S._del&&S._del[k])||[]);
+    const remoteTomb=new Set((p.del&&p.del[k])||[]);
+    const tomb=new Set([...localTomb,...remoteTomb]);
+    if(remoteTomb.size){S._del[k]=[...tomb];}       // 记住他端删除，下次同步继续忽略
+    const orig=S[k]||[];
+    const localArr=orig.filter(x=>!tomb.has(f(x)));
+    const remoteArr=p[k].filter(x=>!tomb.has(f(x)));
+    const r=syncUnion(localArr,remoteArr,f,tomb);
+    if(r.added||localArr.length!==orig.length){S[k]=r.list;changed=true;}
   });
   if(p&&Number(p.cardSeq||0)>Number(S.cardSeq||0)){S.cardSeq=Number(p.cardSeq);changed=true;}
   if(p&&Number(p.seq||0)>Number(S.seq||0)){S.seq=Number(p.seq);changed=true;}
@@ -4288,6 +4363,7 @@ function syncShopPayload(){
   return JSON.parse(JSON.stringify({
     shop:S.shop,products:S.products,members:S.members,stockLog:S.stockLog,
     smsLog:S.smsLog,shifts:S.shifts,holds:S.holds,cardSeq:S.cardSeq,seq:S.seq,
+    del:S._del||{},
     device:SYNC_DEVICE,updatedAt:new Date().toISOString()
   }));
 }
@@ -4601,7 +4677,41 @@ function syncBoot(){
   if(!isDesktop()&&SYNC.token&&SYNC.auto)setTimeout(()=>syncNow({silent:true}),1500);
 }
 
-load();initUI();syncBoot();
+/* ============ 设置页工具折叠 ============ */
+/* 把「<hr><h3>标题</h3> 内容…」的每一段包成 <details>，可点标题收起/展开；
+   开合状态记在 localStorage，默认全部收起，另有「全部展开 / 全部收起」按钮 */
+const SET_FOLD_KEY='pos_set_fold_v1';
+function initSettingsFold(){
+  const card=document.getElementById('setCard');
+  if(!card||card.dataset.folded==='1')return;card.dataset.folded='1';
+  const kids=[...card.children];let det=null;
+  kids.forEach(n=>{
+    if(n.tagName==='HR'){
+      det=document.createElement('details');det.className='set-sec';
+      card.insertBefore(det,n);n.remove();return;
+    }
+    if(!det)return;
+    if(n.tagName==='H3'){
+      const sm=document.createElement('summary');sm.textContent=n.textContent;
+      det.appendChild(sm);n.remove();return;
+    }
+    det.appendChild(n);
+  });
+  let st={};try{st=JSON.parse(localStorage.getItem(SET_FOLD_KEY)||'{}');}catch(e){}
+  card.querySelectorAll('details.set-sec').forEach((d,i)=>{d.open=st[i]===true;});
+  /* toggle 不冒泡，用捕获监听统一持久化 */
+  card.addEventListener('toggle',e=>{
+    if(e.target.tagName!=='DETAILS')return;
+    const s={};card.querySelectorAll('details.set-sec').forEach((d,i)=>{s[i]=d.open;});
+    try{localStorage.setItem(SET_FOLD_KEY,JSON.stringify(s));}catch(err){}
+  },true);
+}
+function foldAll(open){
+  const card=document.getElementById('setCard');if(!card)return;
+  card.querySelectorAll('details.set-sec').forEach(d=>{d.open=!!open;});
+}
+
+load();initUI();initSettingsFold();syncBoot();
 </script>
 </body>
 </html>
