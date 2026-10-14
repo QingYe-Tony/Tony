@@ -5,6 +5,11 @@
  * 零依赖（只用 Node 内置模块），账号密码用 PBKDF2-HMAC-SHA512 + 随机盐存储，
  * 登录后发 30 天有效的令牌。
  *
+ * 账号标识：**手机号与邮箱等价**，同一个接口都能用。
+ *   {account:'13800000000', password:'…'}   手机号（+86 / 空格 / 横线都会自动归一）
+ *   {account:'you@example.com', password:'…'}  邮箱
+ *   老客户端发 {email:'…'} 也照样认（向后兼容）。
+ *
  * 两种用法：
  *
  * ① 命令行直接跑（独立部署）：
@@ -55,6 +60,7 @@ function ensureDir() {
 
 function loadDB() {
   ensureDir();
+  let migrated = 0;
   try {
     if (fs.existsSync(DB_FILE)) {
       const raw = fs.readFileSync(DB_FILE, 'utf8');
@@ -62,6 +68,8 @@ function loadDB() {
         DB = Object.assign(EMPTY_DB(), JSON.parse(raw));
         ['users'].forEach(k => { if (!Array.isArray(DB[k])) DB[k] = []; });
         ['tokens', 'shops', 'orders'].forEach(k => { if (!DB[k] || typeof DB[k] !== 'object') DB[k] = {}; });
+        // 兼容 v1.4.x 只有 email 字段的老账号：补齐 account / accountType
+        DB.users.forEach(u => { if (!u.account && u.email) { accountKeyOf(u); migrated++; } });
       }
     }
   } catch (e) {
@@ -69,8 +77,13 @@ function loadDB() {
     const bad = DB_FILE + '.broken-' + Date.now();
     try { fs.renameSync(DB_FILE, bad); console.error('[warn] 原文件已备份为 ' + bad); } catch (_) {}
     DB = EMPTY_DB();
+    migrated = 0;
   }
   dbReady = true;
+  if (migrated) {
+    console.log('[迁移] 已为 ' + migrated + ' 个旧账号补齐 account 字段（原邮箱登录方式不受影响）');
+    saveDB();
+  }
 }
 
 function saveSoon() {
@@ -99,6 +112,44 @@ function newToken() { return crypto.randomBytes(24).toString('hex'); }
 
 function normalizeEmail(v) { return String(v || '').trim().toLowerCase(); }
 
+/* 账号标识：手机号与邮箱等价，都归一到「一个字符串 key」。
+ *   邮箱   → 小写去空格
+ *   手机号 → 去掉空格、横线、括号、+；带 86 前缀的统一去掉
+ * 返回 null 表示格式不合法。 */
+function normalizeAccount(v) {
+  const s = String(v == null ? '' : v).trim();
+  if (!s) return null;
+  if (s.indexOf('@') >= 0) {
+    const e = s.toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e)) return null;
+    return { key: e, type: 'email' };
+  }
+  let d = s.replace(/[^\d]/g, '');
+  if (d.length === 13 && d.slice(0, 2) === '86') d = d.slice(2);   // +86 138… / 86138…
+  if (d.length === 11 && d[0] === '1') return { key: d, type: 'phone' };
+  if (d.length >= 7 && d.length <= 15) return { key: d, type: 'phone' };   // 国际号码兜底
+  return null;
+}
+
+/* 取客户端传来的账号：优先 account，其次 email / phone（兼容老客户端） */
+function pickAccountInput(b) {
+  if (b.account != null && String(b.account).trim() !== '') return b.account;
+  if (b.email != null && String(b.email).trim() !== '') return b.email;
+  if (b.phone != null && String(b.phone).trim() !== '') return b.phone;
+  return '';
+}
+
+/* 老数据只有 email 字段，这里就地补齐 account / accountType（内存迁移，首次存盘即固化） */
+function accountKeyOf(u) {
+  if (u.account) return u.account;
+  if (u.email) {
+    u.account = normalizeEmail(u.email);
+    u.accountType = 'email';
+    return u.account;
+  }
+  return '';
+}
+
 function issueToken(user) {
   const token = newToken();
   DB.tokens[token] = { userId: user.id, expiresAt: Date.now() + TOKEN_DAYS * 86400000 };
@@ -112,7 +163,15 @@ function userOfToken(token) {
   return DB.users.find(u => u.id === t.userId) || null;
 }
 function publicUser(u) {
-  return { id: u.id, email: u.email, createdAt: u.createdAt };
+  const key = accountKeyOf(u);
+  return {
+    id: u.id,
+    account: key,
+    accountType: u.accountType || 'email',
+    email: u.email || '',
+    phone: u.phone || '',
+    createdAt: u.createdAt,
+  };
 }
 
 function shopRec(userId) {
@@ -183,40 +242,47 @@ async function handle(req, res, url) {
     });
   }
 
-  /* --- 注册 --- */
+  /* --- 注册（账号可以是手机号或邮箱） --- */
   if (p === '/api/register' && req.method === 'POST') {
     const b = await readBody(req);
-    const email = normalizeEmail(b.email);
+    const acc = normalizeAccount(pickAccountInput(b));
     const password = String(b.password || '');
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return send(res, 400, { error: '请填写正确的邮箱' });
+    if (!acc) return send(res, 400, { error: '请填写正确的手机号或邮箱' });
     if (password.length < 6) return send(res, 400, { error: '密码至少 6 位' });
-    if (DB.users.some(u => u.email === email)) return send(res, 409, { error: '该邮箱已注册，请直接登录' });
+    if (DB.users.some(u => accountKeyOf(u) === acc.key)) {
+      return send(res, 409, { error: (acc.type === 'phone' ? '该手机号' : '该邮箱') + '已注册，请直接登录' });
+    }
     const salt = newSalt();
     const user = {
       id: 'u' + crypto.randomBytes(8).toString('hex'),
-      email, salt, hash: hashPassword(password, salt),
+      account: acc.key,
+      accountType: acc.type,
+      email: acc.type === 'email' ? acc.key : '',
+      phone: acc.type === 'phone' ? acc.key : '',
+      salt, hash: hashPassword(password, salt),
       shopName: String(b.shopName || '').slice(0, 60),
       createdAt: new Date().toISOString(),
     };
     DB.users.push(user);
     const token = issueToken(user);
     saveDB();
-    console.log('[注册] ' + email);
+    console.log('[注册] ' + acc.type + ' ' + acc.key);
     return send(res, 200, { token, user: publicUser(user) });
   }
 
-  /* --- 登录 --- */
+  /* --- 登录（手机号或邮箱都行） --- */
   if (p === '/api/login' && req.method === 'POST') {
     const b = await readBody(req);
-    const email = normalizeEmail(b.email);
+    const acc = normalizeAccount(pickAccountInput(b));
     const password = String(b.password || '');
-    const user = DB.users.find(u => u.email === email);
+    if (!acc) return send(res, 400, { error: '请填写正确的手机号或邮箱' });
+    const user = DB.users.find(u => accountKeyOf(u) === acc.key);
     if (!user || hashPassword(password, user.salt) !== user.hash) {
-      return send(res, 401, { error: '邮箱或密码不正确' });
+      return send(res, 401, { error: '账号或密码不正确' });
     }
     const token = issueToken(user);
     saveDB();
-    console.log('[登录] ' + email);
+    console.log('[登录] ' + acc.type + ' ' + acc.key);
     return send(res, 200, { token, user: publicUser(user) });
   }
 
@@ -460,6 +526,7 @@ module.exports = {
   startServer,
   probeServer,
   lanAddresses,
+  normalizeAccount,
   SERVICE_TAG,
   SERVICE_NAME,
   DEFAULT_PORT,

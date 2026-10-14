@@ -859,22 +859,50 @@ exports.main_handler = async (event) => {
 
 <div class="toast" id="toast"></div>
 
-<!-- 收银员登录 -->
-<div id="loginGate" class="hidden" style="position:fixed;inset:0;z-index:100;padding:20px;
+<!-- 登录门：收银员登录 / 账号登录 -->
+<div id="loginGate" class="hidden" style="position:fixed;inset:0;z-index:100;padding:20px;overflow:auto;
   background:linear-gradient(135deg,#1e3a8a,#7c3aed);display:flex;align-items:center;justify-content:center">
-  <div class="card" style="width:min(380px,100%);padding:22px">
-    <div style="text-align:center;margin-bottom:16px">
+  <div class="card" style="width:min(420px,100%);padding:22px;margin:auto">
+    <div style="text-align:center;margin-bottom:14px">
       <div style="width:56px;height:56px;margin:0 auto 10px;border-radius:16px;background:var(--brand);color:#fff;
         display:flex;align-items:center;justify-content:center;font-size:24px;font-weight:700" id="loginLogo">收</div>
       <h3 style="margin:0" id="loginShop">通用收银台</h3>
-      <p class="pill">请选择收银员并输入密码</p>
+      <p class="pill" id="loginSub">请选择收银员并输入密码</p>
     </div>
-    <div class="field"><label>收银员</label><select id="loginStaff"></select></div>
-    <div class="field"><label>密码 / PIN</label>
-      <input id="loginPin" type="password" inputmode="numeric" autocomplete="off"
-        placeholder="未设密码可留空" onkeydown="if(event.key==='Enter')doLogin()"></div>
-    <button class="primary" style="width:100%" onclick="doLogin()">登录</button>
-    <p class="pill" style="text-align:center;margin-top:10px">默认账号「店长」未设密码，首次可直接登录</p>
+
+    <div class="row" style="gap:8px;margin-bottom:14px">
+      <button id="gateTabStaff" style="flex:1" onclick="gateSetMode('staff')">收银员登录</button>
+      <button id="gateTabAcct" style="flex:1" onclick="gateSetMode('account')">账号登录</button>
+    </div>
+
+    <!-- ① 收银员登录（本机 PIN） -->
+    <div id="gatePaneStaff">
+      <div class="field"><label>收银员</label><select id="loginStaff"></select></div>
+      <div class="field"><label>密码 / PIN</label>
+        <input id="loginPin" type="password" inputmode="numeric" autocomplete="off"
+          placeholder="未设密码可留空" onkeydown="if(event.key==='Enter')doLogin()"></div>
+      <button class="primary" style="width:100%" onclick="doLogin()">进入收银台</button>
+      <p class="pill" style="text-align:center;margin-top:10px">默认账号「店长」未设密码，首次可直接登录</p>
+    </div>
+
+    <!-- ② 账号登录（手机号 / 邮箱，多端同步） -->
+    <div id="gatePaneAcct" class="hidden">
+      <div id="gateSyncState"></div>
+      <div class="field"><label>手机号 / 邮箱</label>
+        <input id="gateAcct" autocomplete="username" autocapitalize="off" spellcheck="false"
+          placeholder="13800000000 或 you@example.com"></div>
+      <div class="field"><label>密码（至少 6 位）</label>
+        <input id="gatePass" type="password" autocomplete="current-password"
+          placeholder="••••••" onkeydown="if(event.key==='Enter')gateAcctLogin()"></div>
+      <div class="field hidden" id="gateBaseWrap"><label>同步服务器地址</label>
+        <input id="gateBase" placeholder="http://192.168.1.5:8787" autocapitalize="off" spellcheck="false"></div>
+      <div class="row" style="gap:8px">
+        <button class="primary" style="flex:1" onclick="gateAcctLogin()">登录</button>
+        <button class="ghost" style="flex:1" onclick="gateAcctRegister()">注册新账号</button>
+      </div>
+      <p class="cfg-help" id="gateAcctMsg"></p>
+      <p class="cfg-help">用同一个账号在手机、收银机、电脑上登录，看到的就是同一份商品 / 会员 / 订单。</p>
+    </div>
   </div>
 </div>
 
@@ -1766,21 +1794,134 @@ function requireLogin(){return !!(S.shop.loginRequired&&!SESSION);}
 function openLoginGate(){
   const sel=document.getElementById('loginStaff');if(!sel)return;
   sel.innerHTML=staffList().map(s=>`<option value="${s.id}">${escapeHtml(s.name)}（${s.role==='owner'?'店长':'收银员'}）</option>`).join('');
+  // 记住上次登录的收银员，省一次选择
+  try{const last=localStorage.getItem('pos_last_staff')||'';if(last&&staffList().some(s=>s.id===last))sel.value=last;}catch(e){}
   document.getElementById('loginShop').textContent=S.shop.name;
   document.getElementById('loginLogo').textContent=(S.shop.name||'收')[0];
   document.getElementById('loginPin').value='';
-  document.getElementById('loginGate').classList.remove('hidden');
-  setTimeout(()=>{const p=document.getElementById('loginPin');if(p)p.focus();},120);
+  const g=document.getElementById('loginGate');if(g)g.classList.remove('hidden');
+  // 恢复上次用的那个 Tab（老板常用账号登录，收银员常用收银员登录）
+  try{const m=localStorage.getItem('pos_gate_mode');if(m==='account'||m==='staff')_gateMode=m;}catch(e){}
+  gateSetMode(_gateMode);
+  setTimeout(()=>{
+    const el=_gateMode==='account'?document.getElementById('gateAcct'):document.getElementById('loginPin');
+    if(el)el.focus();
+  },120);
 }
 function doLogin(){
   const id=document.getElementById('loginStaff').value;
   const s=staffList().find(x=>x.id===id);
   if(!s){toast('请选择收银员');return;}
   const pin=(document.getElementById('loginPin').value||'').trim();
-  if(s.pin&&s.pin!==pin){toast('密码错误');return;}
-  SESSION={staffId:s.id,loginAt:new Date().toISOString()};
-  document.getElementById('loginGate').classList.add('hidden');
-  renderHeader();toast('欢迎，'+s.name);
+  if(s.pin&&String(s.pin)!==pin){toast('密码错误');return;}
+  SESSION={staffId:s.id,loginAt:new Date().toISOString(),via:'staff'};
+  try{localStorage.setItem('pos_last_staff',s.id);}catch(e){}
+  const g=document.getElementById('loginGate');if(g)g.classList.add('hidden');
+  renderHeader();refreshStaffHint();toast('欢迎，'+s.name);
+}
+
+/* ---------------- 登录门：账号登录（手机号 / 邮箱，多端同步） ---------------- */
+let _gateMode='staff';
+function gateSetMode(m){
+  _gateMode=(m==='account')?'account':'staff';
+  try{localStorage.setItem('pos_gate_mode',_gateMode);}catch(e){}
+  const isS=_gateMode==='staff';
+  const bs=document.getElementById('gateTabStaff'),ba=document.getElementById('gateTabAcct');
+  if(bs){bs.className=isS?'primary':'ghost';bs.style.flex='1';}
+  if(ba){ba.className=isS?'ghost':'primary';ba.style.flex='1';}
+  const ps=document.getElementById('gatePaneStaff'),pa=document.getElementById('gatePaneAcct');
+  if(ps)ps.classList.toggle('hidden',!isS);
+  if(pa)pa.classList.toggle('hidden',isS);
+  const sub=document.getElementById('loginSub');
+  if(sub)sub.textContent=isS?'请选择收银员并输入密码':'用手机号或邮箱登录，多端数据自动同步';
+  if(!isS)gateRenderState();
+}
+/* 账号页顶部：同步服务状态 + 非桌面端才需要手填服务器地址 */
+function gateRenderState(){
+  const box=document.getElementById('gateSyncState');
+  const bw=document.getElementById('gateBaseWrap');
+  const gb=document.getElementById('gateBase');
+  if(bw){
+    const manual=!isDesktop();
+    bw.classList.toggle('hidden',!manual);
+    if(manual&&gb&&!String(gb.value||'').trim())gb.value=looksLanUrl(SYNC.base)?SYNC.base:'';
+  }
+  if(!box)return;
+  if(!isDesktop()){
+    box.innerHTML='<p class="cfg-help">手机 / 网页版需要连到<b>运行同步服务的那台电脑</b>，'
+      +'请在下面填它的局域网地址（形如 <code class="inline">http://192.168.1.5:8787</code>）。</p>';
+    return;
+  }
+  if(!EMBED){box.innerHTML='<p class="cfg-help">正在检查本机同步服务…</p>';return;}
+  if(EMBED.starting){box.innerHTML='<p class="cfg-help">正在启动本机同步服务…</p>';return;}
+  if(!EMBED.ok){
+    box.innerHTML='<div class="sync-card bad"><div class="sc-head"><span class="sync-dot bad"></span>'
+      +'本机同步服务启动失败</div><div class="cfg-help">'+escapeHtml(EMBED.error||'未知错误')
+      +'</div><div class="cfg-help">重启应用可重试；或先用「收银员登录」进去，到设置页手动配置。</div></div>';
+    return;
+  }
+  let h='<div class="sync-card ok"><div class="sc-head"><span class="sync-dot ok"></span>本机同步服务 已就绪</div>'
+    +'<div class="sync-kv"><span>手机端请填</span><code class="inline">'
+    +escapeHtml((EMBED.lan&&EMBED.lan[0])||EMBED.base)+'</code></div></div>';
+  box.innerHTML=h;
+}
+function gateVal(id){const el=document.getElementById(id);return el?String(el.value||'').trim():'';}
+function gateMsg(t,bad){
+  const m=document.getElementById('gateAcctMsg');
+  if(!m)return;
+  m.textContent=t||'';
+  m.style.color=bad?'var(--danger)':'';
+}
+function gateResolveBase(){
+  const bw=document.getElementById('gateBaseWrap');
+  const manual=bw&&!bw.classList.contains('hidden');
+  if(manual){
+    const v=gateVal('gateBase');
+    if(v){SYNC.base=v.replace(/\/+$/,'');syncPersist();}
+  }
+  if(!SYNC.base)SYNC.base=syncBaseDefault();
+  return SYNC.base;
+}
+/* 账号登录成功后，把本机也放行（同步账号 = 老板，对应店长身份） */
+function gateEnterAsOwner(){
+  const l=staffList();
+  const owner=l.find(s=>s.role==='owner')||l[0];
+  if(owner){
+    SESSION={staffId:owner.id,loginAt:new Date().toISOString(),via:'account'};
+    try{localStorage.setItem('pos_last_staff',owner.id);}catch(e){}
+  }
+  const g=document.getElementById('loginGate');if(g)g.classList.add('hidden');
+  renderHeader();refreshStaffHint();renderSyncBox();syncRepaint();
+  toast('欢迎，'+currentUser());
+}
+async function gateAcctLogin(){
+  try{
+    const acct=gateVal('gateAcct'),pass=String((document.getElementById('gatePass')||{}).value||'');
+    if(!acct){gateMsg('请填写手机号或邮箱',true);return;}
+    if(!pass){gateMsg('请填写密码',true);return;}
+    gateResolveBase();
+    gateMsg('正在登录…');
+    const d=await syncReq('POST','/api/login',{account:acct,password:pass});
+    syncAdoptAuth(d,acct);
+    gateMsg('登录成功，正在同步数据…');
+    try{await syncNow({silent:true});}catch(e){}
+    gateEnterAsOwner();
+  }catch(e){gateMsg(e.message,true);}
+}
+async function gateAcctRegister(){
+  try{
+    const acct=gateVal('gateAcct'),pass=String((document.getElementById('gatePass')||{}).value||'');
+    if(!acct){gateMsg('请填写手机号或邮箱',true);return;}
+    if(pass.length<6){gateMsg('密码至少 6 位',true);return;}
+    gateResolveBase();
+    if(!confirm('将新建账号「'+acct+'」，并把本机的商品 / 会员 / 订单上传到该账号。\n\n确定创建吗？'))return;
+    gateMsg('正在创建账号…');
+    const d=await syncReq('POST','/api/register',{account:acct,password:pass,shopName:S.shop.name});
+    syncAdoptAuth(d,acct);
+    gateMsg('注册成功，正在上传本机数据…');
+    try{await syncNow({silent:true});}catch(e){}
+    gateEnterAsOwner();
+  }catch(e){gateMsg(e.message,true);}
 }
 function switchStaff(){closeModal('staffModal');openLoginGate();}
 function openStaffModal(){
@@ -2262,7 +2403,7 @@ function bkCSV(rows){
   }).join(',')).join('\r\n');
 }
 function bkPack(){
-  return {app:'通用收银台',version:'1.4.0',exportedAt:new Date().toISOString(),
+  return {app:'通用收银台',version:'1.5.0',exportedAt:new Date().toISOString(),
     shop:S.shop,products:S.products,members:S.members,orders:S.orders,
     shifts:S.shifts,stockLog:S.stockLog,smsLog:S.smsLog,holds:S.holds,
     seq:S.seq,cardSeq:S.cardSeq};
@@ -2293,7 +2434,7 @@ function expXLSX(){
     ['订单数',S.orders.length],
     ['库存流水',(S.stockLog||[]).length],
     ['短信记录',(S.smsLog||[]).length],
-    ['软件版本','通用收银台 1.4.0']
+    ['软件版本','通用收银台 1.5.0']
   ]});
   downloadBlob(bkBuildXLSX(sheets),'通用收银台数据_'+todayStr()+'.xlsx');
   toast('已导出 Excel（'+sheets.length+' 个工作表）');
@@ -3534,7 +3675,7 @@ function initUI(){
    · 订单走 /api/orders 增量通道（按 order_uid 幂等 upsert），不参与整店覆盖。
    ================================================================== */
 const SYNC_KEY='pos_sync_v1';
-const SYNC_DEF={base:'',token:'',email:'',userId:'',shopRev:0,orderRev:0,lastSync:null,auto:true,pushed:[]};
+const SYNC_DEF={base:'',token:'',account:'',phone:'',email:'',userId:'',shopRev:0,orderRev:0,lastSync:null,auto:true,pushed:[]};
 let SYNC=Object.assign({},SYNC_DEF);
 let _syncTimer=null,_syncing=false,_syncErr='';
 /* 桌面版内嵌同步服务的状态（由主进程通过 preload 桥接提供；网页/手机端为 null） */
@@ -3578,17 +3719,35 @@ const SYNC_DEVICE=(function(){
   return plat+'·'+d.slice(-4);
 })();
 
+/* 内网地址判断：只有内网/本机才敢自动猜同步服务器地址 */
+function isPrivateHost(h){
+  if(!h)return false;
+  if(/^10\./.test(h))return true;
+  if(/^192\.168\./.test(h))return true;
+  if(/^172\.(1[6-9]|2\d|3[01])\./.test(h))return true;
+  if(/^169\.254\./.test(h))return true;
+  if(/\.local$/i.test(h))return true;
+  if(/^(localhost|127\.0\.0\.1)$/i.test(h))return true;
+  return false;
+}
+function looksLanUrl(u){
+  const s=String(u||'').trim();
+  return /^https?:\/\/(\d{1,3}\.){3}\d{1,3}(:\d+)?\/?$/i.test(s)
+      || /^https?:\/\/[a-z0-9-]+\.local(:\d+)?\/?$/i.test(s);
+}
 function syncBaseDefault(){
   if(EMBED&&EMBED.ok&&EMBED.base)return EMBED.base;   // 桌面版：直接用内嵌服务的实际端口
   const h=(location&&location.hostname)||'';
-  const lan=h&&!/^(localhost|127\.0\.0\.1)$/i.test(h)?h:null;
-  return 'http://'+(lan||'localhost')+':8787';
+  // 从内网地址打开的页面（例如手机连了店里的收银机），用同一个主机名 + 默认端口
+  if(h&&isPrivateHost(h)&&!/^(localhost|127\.0\.0\.1)$/i.test(h))return 'http://'+h+':8787';
+  return '';   // 公网域名或本地文件打开 → 不瞎猜，让用户自己填
 }
 function syncLoad(){
   try{const r=localStorage.getItem(SYNC_KEY);if(r)SYNC=Object.assign({},SYNC_DEF,JSON.parse(r));}catch(e){}
   if(!Array.isArray(SYNC.pushed))SYNC.pushed=[];
   if(SYNC.auto===undefined)SYNC.auto=true;
   if(!SYNC.base)SYNC.base=syncBaseDefault();
+  if(!SYNC.account)SYNC.account=SYNC.email||SYNC.phone||'';   // 兼容旧版本只存了 email
 }
 function syncPersist(){try{localStorage.setItem(SYNC_KEY,JSON.stringify(SYNC));}catch(e){}}
 /* 只写本地，不触发回推（避免同步过程自己把自己再排一次队） */
@@ -3630,7 +3789,7 @@ async function syncReq(method,p,body){
   if(!res.ok){
     const err=new Error((data&&data.error)||('服务器返回 HTTP '+res.status));
     err.status=res.status;err.data=data;
-    if(res.status===401&&SYNC.token){SYNC.token='';SYNC.email='';SYNC.userId='';syncPersist();renderSyncBox();}
+    if(res.status===401&&SYNC.token){SYNC.token='';SYNC.account='';SYNC.phone='';SYNC.email='';SYNC.userId='';syncPersist();renderSyncBox();}
     throw err;
   }
   return data||{};
@@ -3792,12 +3951,19 @@ function syncTouch(){
 }
 
 /* ---------------------------------------------------------- 登录 */
-function syncAdoptAuth(d,email){
+function syncAdoptAuth(d,acct){
+  const u=(d&&d.user)||{};
   SYNC.token=(d&&d.token)||'';
-  SYNC.email=(d&&d.user&&d.user.email)||email||'';
-  SYNC.userId=(d&&d.user&&d.user.id)||'';
+  SYNC.account=u.account||acct||'';
+  SYNC.phone=u.phone||'';
+  SYNC.email=u.email||'';
+  SYNC.userId=u.id||'';
   SYNC.shopRev=0;SYNC.orderRev=0;SYNC.pushed=[];SYNC.lastSync=null;
   syncPersist();
+}
+/* 展示用的账号：优先手机号 / 邮箱字段 */
+function syncWho(){
+  return SYNC.account||SYNC.phone||SYNC.email||'';
 }
 function syncReadBase(){
   const v=syncInput('syncBase');
@@ -3822,10 +3988,10 @@ async function syncTest(){
 async function syncRegister(){
   try{
     syncReadBase();
-    const email=syncInput('syncEmail'),pass=syncInput('syncPass');
-    if(!email||!pass){toast('请填写邮箱和密码');return;}
-    const d=await syncReq('POST','/api/register',{email:email,password:pass,shopName:S.shop.name});
-    syncAdoptAuth(d,email);
+    const acct=syncInput('syncAccount'),pass=syncInput('syncPass');
+    if(!acct||!pass){toast('请填写手机号或邮箱和密码');return;}
+    const d=await syncReq('POST','/api/register',{account:acct,password:pass,shopName:S.shop.name});
+    syncAdoptAuth(d,acct);
     toast('注册成功，正在上传本机数据…');
     await syncNow({silent:true});
   }catch(e){_syncErr=e.message;toast(e.message);renderSyncBox();}
@@ -3833,10 +3999,10 @@ async function syncRegister(){
 async function syncLogin(){
   try{
     syncReadBase();
-    const email=syncInput('syncEmail'),pass=syncInput('syncPass');
-    if(!email||!pass){toast('请填写邮箱和密码');return;}
-    const d=await syncReq('POST','/api/login',{email:email,password:pass});
-    syncAdoptAuth(d,email);
+    const acct=syncInput('syncAccount'),pass=syncInput('syncPass');
+    if(!acct||!pass){toast('请填写手机号或邮箱和密码');return;}
+    const d=await syncReq('POST','/api/login',{account:acct,password:pass});
+    syncAdoptAuth(d,acct);
     toast('登录成功，正在同步…');
     await syncNow({silent:true});
   }catch(e){_syncErr=e.message;toast(e.message);renderSyncBox();}
@@ -3844,7 +4010,7 @@ async function syncLogin(){
 async function syncLogout(){
   if(!confirm('退出登录后本机不再自动同步（本机数据会保留）。确定退出？'))return;
   try{await syncReq('POST','/api/logout');}catch(e){}
-  SYNC.token='';SYNC.email='';SYNC.userId='';
+  SYNC.token='';SYNC.account='';SYNC.phone='';SYNC.email='';SYNC.userId='';
   SYNC.shopRev=0;SYNC.orderRev=0;SYNC.pushed=[];SYNC.lastSync=null;_syncErr='';
   syncPersist();renderSyncBox();toast('已退出登录');
 }
@@ -3901,7 +4067,7 @@ function renderSyncBox(){
     const color=_syncErr?'color:var(--danger)':(_syncing?'':'color:var(--ok)');
     box.innerHTML=
       '<div class="row" style="flex-wrap:wrap;gap:8px;align-items:center;margin:8px 0">'
-      +'<span class="pill">已登录 <b>'+esc(SYNC.email)+'</b></span>'
+      +'<span class="pill">已登录 <b>'+esc(syncWho())+'</b></span>'
       +'<span class="pill">本机 '+esc(SYNC_DEVICE)+'</span>'
       +'<span class="pill" style="'+color+'">'+esc(st)+'</span>'
       +(SYNC.lastSync?('<span class="pill">上次 '+esc(fmtShortTime(SYNC.lastSync))+'</span>'):'')
@@ -3937,7 +4103,9 @@ function renderSyncBox(){
           +'手机、其他电脑连同一个 WiFi 后填那个地址即可。'
           +'如果那台电脑装的是桌面版收银台，就不用再手动启动——它自己会跑。</p>')
       +'<div class="row">'
-      +'<div class="field" style="flex:1"><label>邮箱</label><input id="syncEmail" type="email" placeholder="you@example.com"></div>'
+      +'<div class="field" style="flex:1"><label>手机号 / 邮箱</label>'
+      +'<input id="syncAccount" autocomplete="username" autocapitalize="off" spellcheck="false"'
+      +' placeholder="13800000000 或 you@example.com"></div>'
       +'<div class="field" style="flex:1"><label>密码（至少 6 位）</label><input id="syncPass" type="password" placeholder="••••••"></div>'
       +'</div>'
       +'<div class="row" style="gap:8px;flex-wrap:wrap">'
@@ -3945,6 +4113,8 @@ function renderSyncBox(){
       +'<button class="ghost" onclick="syncLogin()">已有账号，登录</button>'
       +'<button class="ghost" onclick="syncTest()">测试连接</button>'
       +'</div>'
+      +'<p class="cfg-help">手机号与邮箱<b>都能当账号</b>，同一个账号在所有设备上登录即可共享数据。'
+      +'收银员登录界面上也有「账号登录」入口，不必先进设置页。</p>'
       +(_syncErr?('<p class="cfg-help" style="color:var(--danger)">'+esc(_syncErr)+'</p>'):'');
   }
 }
