@@ -885,23 +885,29 @@ exports.main_handler = async (event) => {
       <p class="pill" style="text-align:center;margin-top:10px">默认账号「店长」未设密码，首次可直接登录</p>
     </div>
 
-    <!-- ② 账号登录（手机号 / 邮箱，多端同步） -->
+    <!-- ② 账号登录（手机号 / 邮箱；本机即可注册登录，不依赖任何服务器） -->
     <div id="gatePaneAcct" class="hidden">
-      <div id="gateSyncState"></div>
       <div class="field"><label>手机号 / 邮箱</label>
         <input id="gateAcct" autocomplete="username" autocapitalize="off" spellcheck="false"
           placeholder="13800000000 或 you@example.com"></div>
       <div class="field"><label>密码（至少 6 位）</label>
         <input id="gatePass" type="password" autocomplete="current-password"
           placeholder="••••••" onkeydown="if(event.key==='Enter')gateAcctLogin()"></div>
-      <div class="field hidden" id="gateBaseWrap"><label>同步服务器地址</label>
-        <input id="gateBase" placeholder="http://192.168.1.5:8787" autocapitalize="off" spellcheck="false"></div>
+      <label class="switch-row" style="margin:2px 0 10px;display:flex">
+        <input type="checkbox" id="gateRemember" checked> 记住账号密码（保存在本机，下次自动填好）</label>
       <div class="row" style="gap:8px">
         <button class="primary" style="flex:1" onclick="gateAcctLogin()">登录</button>
         <button class="ghost" style="flex:1" onclick="gateAcctRegister()">注册新账号</button>
       </div>
       <p class="cfg-help" id="gateAcctMsg"></p>
-      <p class="cfg-help">用同一个账号在手机、收银机、电脑上登录，看到的就是同一份商品 / 会员 / 订单。</p>
+      <p class="cfg-help">本机账号：<b>不需要服务器</b>。第一次直接输账号密码点「登录」就会自动建号；
+        下次同一台设备直接登录即可。想让手机 / 多台电脑看到同一份数据，再展开下面的「多端同步」。</p>
+      <details id="gateSyncDet" style="margin-top:10px">
+        <summary style="cursor:pointer;font-size:13px;color:var(--muted)">多端同步（可选 · 不填也能正常用）</summary>
+        <div id="gateSyncState" style="margin-top:8px"></div>
+        <div class="field" id="gateBaseWrap"><label>同步服务器地址</label>
+          <input id="gateBase" placeholder="http://192.168.1.5:8787" autocapitalize="off" spellcheck="false"></div>
+      </details>
     </div>
   </div>
 </div>
@@ -937,6 +943,7 @@ exports.main_handler = async (event) => {
       <button class="primary" onclick="addStaff()">添加</button>
     </div>
     <div class="row" style="justify-content:flex-end">
+      <button class="danger" onclick="appLogout()">退出登录</button>
       <button class="ghost" onclick="switchStaff()">切换收银员</button>
       <button class="primary" onclick="closeModal('staffModal')">关闭</button>
     </div>
@@ -1799,12 +1806,15 @@ function openLoginGate(){
   document.getElementById('loginShop').textContent=S.shop.name;
   document.getElementById('loginLogo').textContent=(S.shop.name||'收')[0];
   document.getElementById('loginPin').value='';
+  acctLoad();gateRecall();                       // 回填「记住的账号密码」
   const g=document.getElementById('loginGate');if(g)g.classList.remove('hidden');
   // 恢复上次用的那个 Tab（老板常用账号登录，收银员常用收银员登录）
   try{const m=localStorage.getItem('pos_gate_mode');if(m==='account'||m==='staff')_gateMode=m;}catch(e){}
   gateSetMode(_gateMode);
   setTimeout(()=>{
-    const el=_gateMode==='account'?document.getElementById('gateAcct'):document.getElementById('loginPin');
+    const el=_gateMode==='account'
+      ? (gateVal('gateAcct')?document.getElementById('gatePass'):document.getElementById('gateAcct'))
+      : document.getElementById('loginPin');
     if(el)el.focus();
   },120);
 }
@@ -1833,23 +1843,19 @@ function gateSetMode(m){
   if(ps)ps.classList.toggle('hidden',!isS);
   if(pa)pa.classList.toggle('hidden',isS);
   const sub=document.getElementById('loginSub');
-  if(sub)sub.textContent=isS?'请选择收银员并输入密码':'用手机号或邮箱登录，多端数据自动同步';
+  if(sub)sub.textContent=isS?'请选择收银员并输入密码':'用手机号或邮箱登录（本机账号，不需要服务器）';
   if(!isS)gateRenderState();
 }
-/* 账号页顶部：同步服务状态 + 非桌面端才需要手填服务器地址 */
+/* 「多端同步」折叠区里的状态提示；服务器地址是可选项，不填也能正常注册登录 */
 function gateRenderState(){
   const box=document.getElementById('gateSyncState');
-  const bw=document.getElementById('gateBaseWrap');
   const gb=document.getElementById('gateBase');
-  if(bw){
-    const manual=!isDesktop();
-    bw.classList.toggle('hidden',!manual);
-    if(manual&&gb&&!String(gb.value||'').trim())gb.value=looksLanUrl(SYNC.base)?SYNC.base:'';
-  }
+  if(gb&&!String(gb.value||'').trim()&&looksLanUrl(SYNC.base))gb.value=SYNC.base;
   if(!box)return;
   if(!isDesktop()){
-    box.innerHTML='<p class="cfg-help">手机 / 网页版需要连到<b>运行同步服务的那台电脑</b>，'
-      +'请在下面填它的局域网地址（形如 <code class="inline">http://192.168.1.5:8787</code>）。</p>';
+    box.innerHTML='<p class="cfg-help">手机 / 网页版要连到<b>运行同步服务的那台电脑</b>，'
+      +'在下面填它的局域网地址（形如 <code class="inline">http://192.168.1.5:8787</code>）。'
+      +'<b>只在本机用</b>的话不用填。</p>';
     return;
   }
   if(!EMBED){box.innerHTML='<p class="cfg-help">正在检查本机同步服务…</p>';return;}
@@ -1872,14 +1878,13 @@ function gateMsg(t,bad){
   m.textContent=t||'';
   m.style.color=bad?'var(--danger)':'';
 }
-function gateResolveBase(){
-  const bw=document.getElementById('gateBaseWrap');
-  const manual=bw&&!bw.classList.contains('hidden');
-  if(manual){
-    const v=gateVal('gateBase');
-    if(v){SYNC.base=v.replace(/\/+$/,'');syncPersist();}
-  }
-  if(!SYNC.base)SYNC.base=syncBaseDefault();
+/* 解析同步服务器地址。optional=true 时允许为空（本机账号不依赖服务器） */
+function gateResolveBase(optional){
+  const v=gateVal('gateBase');
+  if(v){SYNC.base=v.replace(/\/+$/,'');syncPersist();return SYNC.base;}
+  const d=syncBaseDefault();
+  if(d)SYNC.base=d;              // 桌面版自动用内嵌服务；网页/手机端不瞎猜
+  if(!SYNC.base&&!optional)throw new Error('请先填写同步服务器地址');
   return SYNC.base;
 }
 /* 账号登录成功后，把本机也放行（同步账号 = 老板，对应店长身份） */
@@ -1894,33 +1899,265 @@ function gateEnterAsOwner(){
   renderHeader();refreshStaffHint();renderSyncBox();syncRepaint();
   toast('欢迎，'+currentUser());
 }
+/* ==================================================================
+   本机账号：离线注册 / 登录，不依赖任何服务器
+   ──────────────────────────────────────────────────────────────────
+   · 账号 = 手机号 或 邮箱（归一规则与同步服务器完全一致，两端可互通）
+   · 密码在本机用 PBKDF2-HMAC-SHA256 + 随机盐 派生后保存，不存明文；
+     有原生 crypto.subtle 走原生（快），没有就用内置纯 JS 兜底
+   · 「记住账号密码」是用户显式勾选后把明文留在本机，只为下次自动填表
+   ================================================================== */
+const ACCT_KEY='pos_accounts_v1';
+const GATE_SAVE_KEY='pos_gate_saved';
+let ACCTS={};
+/* 账号规范化：邮箱转小写；手机号剥掉 +86 / 空格 / 横线 / 括号 */
+function normalizeAccount(v){
+  const s=String(v==null?'':v).trim();if(!s)return null;
+  if(s.indexOf('@')>=0){
+    const e=s.toLowerCase();
+    if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e))return null;
+    return{key:e,type:'email'};
+  }
+  let d=s.replace(/[^\d]/g,'');
+  if(d.length===13&&d.slice(0,2)==='86')d=d.slice(2);
+  if(d.length===11&&d[0]==='1')return{key:d,type:'phone'};
+  if(d.length>=7&&d.length<=15)return{key:d,type:'phone'};
+  return null;
+}
+function acctMask(key,type){
+  if(type==='email'){const i=key.indexOf('@');return i>2?key.slice(0,2)+'***'+key.slice(i):key;}
+  return key.length>=7?key.slice(0,3)+'****'+key.slice(-4):key;
+}
+function acctLoad(){
+  try{const r=localStorage.getItem(ACCT_KEY);const o=r?JSON.parse(r):null;
+    ACCTS=(o&&typeof o==='object'&&!Array.isArray(o))?o:{};}catch(e){ACCTS={};}
+}
+function acctSave(){try{localStorage.setItem(ACCT_KEY,JSON.stringify(ACCTS));}catch(e){}}
+function acctGet(k){return ACCTS[k]||null;}
+function acctDel(k){if(ACCTS[k]){delete ACCTS[k];acctSave();}}
+/* --- SHA-256 / HMAC-SHA256 / PBKDF2：纯 JS 兜底实现 --- */
+const _SHA_K=new Uint32Array([
+0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,0x3956c25b,0x59f111f1,0x923f82a4,0xab1c5ed5,
+0xd807aa98,0x12835b01,0x243185be,0x550c7dc3,0x72be5d74,0x80deb1fe,0x9bdc06a7,0xc19bf174,
+0xe49b69c1,0xefbe4786,0x0fc19dc6,0x240ca1cc,0x2de92c6f,0x4a7484aa,0x5cb0a9dc,0x76f988da,
+0x983e5152,0xa831c66d,0xb00327c8,0xbf597fc7,0xc6e00bf3,0xd5a79147,0x06ca6351,0x14292967,
+0x27b70a85,0x2e1b2138,0x4d2c6dfc,0x53380d13,0x650a7354,0x766a0abb,0x81c2c92e,0x92722c85,
+0xa2bfe8a1,0xa81a664b,0xc24b8b70,0xc76c51a3,0xd192e819,0xd6990624,0xf40e3585,0x106aa070,
+0x19a4c116,0x1e376c08,0x2748774c,0x34b0bcb5,0x391c0cb3,0x4ed8aa4a,0x5b9cca4f,0x682e6ff3,
+0x748f82ee,0x78a5636f,0x84c87814,0x8cc70208,0x90befffa,0xa4506ceb,0xbef9a3f7,0xc67178f2]);
+const _rotr=(x,n)=>((x>>>n)|(x<<(32-n)))>>>0;
+function _sha256(msg){
+  const H=new Uint32Array([0x6a09e667,0xbb67ae85,0x3c6ef372,0xa54ff53a,
+    0x510e527f,0x9b05688c,0x1f83d9ab,0x5be0cd19]);
+  const l=msg.length,bits=l*8,pad=(l+9+63)&~63;
+  const m=new Uint8Array(pad);m.set(msg);m[l]=0x80;
+  const dv=new DataView(m.buffer);
+  dv.setUint32(pad-8,Math.floor(bits/4294967296),false);
+  dv.setUint32(pad-4,bits>>>0,false);
+  const w=new Uint32Array(64);
+  for(let off=0;off<pad;off+=64){
+    for(let i=0;i<16;i++)w[i]=dv.getUint32(off+i*4,false);
+    for(let i=16;i<64;i++){
+      const a=w[i-15],b=w[i-2];
+      const s0=(_rotr(a,7)^_rotr(a,18)^(a>>>3))>>>0;
+      const s1=(_rotr(b,17)^_rotr(b,19)^(b>>>10))>>>0;
+      w[i]=(w[i-16]+s0+w[i-7]+s1)>>>0;
+    }
+    let a=H[0],b=H[1],c=H[2],d=H[3],e=H[4],f=H[5],g=H[6],h=H[7];
+    for(let i=0;i<64;i++){
+      const S1=(_rotr(e,6)^_rotr(e,11)^_rotr(e,25))>>>0;
+      const ch=((e&f)^((~e)&g))>>>0;
+      const t1=(h+S1+ch+_SHA_K[i]+w[i])>>>0;
+      const S0=(_rotr(a,2)^_rotr(a,13)^_rotr(a,22))>>>0;
+      const maj=((a&b)^(a&c)^(b&c))>>>0;
+      const t2=(S0+maj)>>>0;
+      h=g;g=f;f=e;e=(d+t1)>>>0;d=c;c=b;b=a;a=(t1+t2)>>>0;
+    }
+    H[0]=(H[0]+a)>>>0;H[1]=(H[1]+b)>>>0;H[2]=(H[2]+c)>>>0;H[3]=(H[3]+d)>>>0;
+    H[4]=(H[4]+e)>>>0;H[5]=(H[5]+f)>>>0;H[6]=(H[6]+g)>>>0;H[7]=(H[7]+h)>>>0;
+  }
+  const out=new Uint8Array(32),odv=new DataView(out.buffer);
+  for(let i=0;i<8;i++)odv.setUint32(i*4,H[i],false);
+  return out;
+}
+function _hmacSha256(key,data){
+  const k=key.length>64?_sha256(key):key;
+  const kp=new Uint8Array(64);kp.set(k);
+  const ip=new Uint8Array(64+data.length),op=new Uint8Array(64+32);
+  for(let i=0;i<64;i++){ip[i]=kp[i]^0x36;op[i]=kp[i]^0x5c;}
+  ip.set(data,64);
+  op.set(_sha256(ip),64);
+  return _sha256(op);
+}
+function _pbkdf2(pass,salt,iter,dkLen){
+  const p=utf8Bytes(pass),s=utf8Bytes(salt);
+  const hLen=32,blocks=Math.ceil(dkLen/hLen),out=new Uint8Array(blocks*hLen);
+  for(let b=1;b<=blocks;b++){
+    const si=new Uint8Array(s.length+4);si.set(s);
+    si[s.length]=(b>>>24)&255;si[s.length+1]=(b>>>16)&255;
+    si[s.length+2]=(b>>>8)&255;si[s.length+3]=b&255;
+    let u=_hmacSha256(p,si);const t=u.slice();
+    for(let i=1;i<iter;i++){
+      u=_hmacSha256(p,u);
+      for(let j=0;j<hLen;j++)t[j]^=u[j];
+    }
+    out.set(t,(b-1)*hLen);
+  }
+  return out.slice(0,dkLen);
+}
+function utf8Bytes(str){
+  if(typeof TextEncoder!=='undefined')return new TextEncoder().encode(String(str));
+  const s=unescape(encodeURIComponent(String(str))),a=new Uint8Array(s.length);
+  for(let i=0;i<s.length;i++)a[i]=s.charCodeAt(i);
+  return a;
+}
+function toHex(u8){let s='';for(let i=0;i<u8.length;i++)s+=u8[i].toString(16).padStart(2,'0');return s;}
+function acctSalt(n){
+  n=n||16;const a=new Uint8Array(n);
+  if(window.crypto&&window.crypto.getRandomValues)window.crypto.getRandomValues(a);
+  else for(let i=0;i<n;i++)a[i]=Math.floor(Math.random()*256);
+  return toHex(a);
+}
+function acctCanSubtle(){
+  return !!(window.crypto&&window.crypto.subtle&&window.crypto.subtle.deriveBits);
+}
+/* 纯 JS 迭代上限：没有原生 crypto 的环境（老 WebView / 测试）也能秒开 */
+const ACCT_ITER_SUBTLE=60000,ACCT_ITER_FALLBACK=2500;
+function acctIterDefault(){return acctCanSubtle()?ACCT_ITER_SUBTLE:ACCT_ITER_FALLBACK;}
+/* 派生 64 位十六进制；同一 salt+iter 在任何环境结果一致 */
+async function acctDerive(pass,salt,iter){
+  iter=Number(iter)||acctIterDefault();
+  if(acctCanSubtle()){
+    try{
+      const k=await window.crypto.subtle.importKey('raw',utf8Bytes(pass),
+        {name:'PBKDF2'},false,['deriveBits']);
+      const bits=await window.crypto.subtle.deriveBits(
+        {name:'PBKDF2',salt:utf8Bytes(salt),iterations:iter,hash:'SHA-256'},k,256);
+      return toHex(new Uint8Array(bits));
+    }catch(e){/* 落到纯 JS */}
+  }
+  return toHex(_pbkdf2(pass,salt,Math.min(iter,ACCT_ITER_FALLBACK),32));
+}
+async function acctCreate(key,type,pass){
+  const salt=acctSalt(16),iter=acctIterDefault();
+  const hash=await acctDerive(pass,salt,iter);
+  const now=new Date().toISOString();
+  const rec={id:uid(),account:key,accountType:type,salt:salt,iter:iter,hash:hash,
+    createdAt:now,lastLogin:now};
+  ACCTS[key]=rec;acctSave();
+  return rec;
+}
+async function acctVerify(key,pass){
+  const r=acctGet(key);if(!r||!r.salt||!r.hash)return false;
+  const h=await acctDerive(pass,r.salt,r.iter||acctIterDefault());
+  return h===r.hash;
+}
+/* 「记住账号密码」：只在勾选时把明文留在本机，下次自动填表 */
+function gateRemember(acct,pass){
+  const cb=document.getElementById('gateRemember');
+  try{
+    if(cb&&!cb.checked){        // 用户主动取消 → 记下「不想记」，下次开门保持不勾选
+      localStorage.setItem(GATE_SAVE_KEY,JSON.stringify(
+        {account:String(acct||''),password:'',keep:false}));
+      return;
+    }
+    localStorage.setItem(GATE_SAVE_KEY,JSON.stringify(
+      {account:String(acct||''),password:String(pass||''),keep:true}));
+  }catch(e){}
+}
+function gateSaved(){try{return JSON.parse(localStorage.getItem(GATE_SAVE_KEY)||'{}')||{};}catch(e){return {};}}
+function gateRecall(){
+  const s=gateSaved();
+  const a=document.getElementById('gateAcct'),p=document.getElementById('gatePass'),
+        c=document.getElementById('gateRemember');
+  // 从没选过 → 沿用 HTML 里的默认（勾选）；明确选过 → 按用户的选择
+  if(c)c.checked=(s.keep===undefined)?true:!!s.keep;
+  if(a&&s.account)a.value=s.account;      // 账号总是回填，省去重打
+  if(p)p.value=(s.keep&&s.password)?s.password:'';
+  return s;
+}
+/* 后台把本机账号「绑定」到同步服务器（可选）：成功就开始多端同步，失败静默 */
+function gateSyncBind(acct,pass){
+  let base='';
+  try{base=String(gateResolveBase(true)||'').trim();}catch(e){base='';}
+  if(!base)return;                                   // 没配服务器：纯本机账号，什么都不做
+  (async()=>{
+    try{
+      let d=null;
+      try{d=await syncReq('POST','/api/login',{account:acct,password:pass});}
+      catch(e){
+        if(e.status===401)return;                     // 服务器上同名账号、密码不同 → 不覆盖
+        if(e.status===404||!e.status)d=await syncReq('POST','/api/register',
+          {account:acct,password:pass,shopName:S.shop.name});
+        else return;
+      }
+      if(!d||!d.token)return;
+      syncAdoptAuth(d,acct);
+      await syncNow({silent:true});
+      renderSyncBox();
+    }catch(e){/* 服务器不可达：保持本机登录，不影响使用 */}
+  })();
+}
+/* 账号登录：本机账号优先（离线可用）；配了服务器再顺带同步 */
 async function gateAcctLogin(){
   try{
-    const acct=gateVal('gateAcct'),pass=String((document.getElementById('gatePass')||{}).value||'');
-    if(!acct){gateMsg('请填写手机号或邮箱',true);return;}
-    if(!pass){gateMsg('请填写密码',true);return;}
-    gateResolveBase();
-    gateMsg('正在登录…');
-    const d=await syncReq('POST','/api/login',{account:acct,password:pass});
-    syncAdoptAuth(d,acct);
-    gateMsg('登录成功，正在同步数据…');
-    try{await syncNow({silent:true});}catch(e){}
+    const raw=gateVal('gateAcct'),pass=String((document.getElementById('gatePass')||{}).value||'');
+    const na=normalizeAccount(raw);
+    if(!na){gateMsg('请填写正确的手机号或邮箱',true);return;}
+    if(pass.length<6){gateMsg('密码至少 6 位',true);return;}
+    /* ① 本机已有该账号 → 纯离线校验，不需要任何服务器 */
+    const local=acctGet(na.key);
+    if(local){
+      gateMsg('正在登录…');
+      if(!await acctVerify(na.key,pass)){
+        gateMsg('密码不正确。忘记密码可删掉本机账号重新注册（本机数据不会丢）。',true);return;
+      }
+      local.lastLogin=new Date().toISOString();acctSave();
+      gateRemember(na.key,pass);
+      gateEnterAsOwner();
+      gateSyncBind(na.key,pass);
+      return;
+    }
+    /* ② 本机没有 → 配了服务器就先问服务器（换设备登录的场景） */
+    const base=gateResolveBase(true);
+    if(base){
+      gateMsg('正在登录…');
+      let d=null;
+      try{d=await syncReq('POST','/api/login',{account:raw,password:pass});}
+      catch(e){
+        if(e.status===401){gateMsg('密码不正确',true);return;}   // 服务器有这个账号，密码不对
+        /* 404 账号不存在 / 网络不通 → 落到下面在本机自动建号 */
+      }
+      if(d){
+        syncAdoptAuth(d,na.key);
+        await acctCreate(na.key,na.type,pass);
+        gateRemember(na.key,pass);
+        gateMsg('登录成功，正在同步数据…');
+        try{await syncNow({silent:true});}catch(e){}
+        gateEnterAsOwner();return;
+      }
+    }
+    /* ③ 全新账号：直接建号登录 —— 第一次点「登录」就能用 */
+    gateMsg('首次使用该账号，正在本机创建…');
+    await acctCreate(na.key,na.type,pass);
+    gateRemember(na.key,pass);
     gateEnterAsOwner();
+    gateSyncBind(na.key,pass);
   }catch(e){gateMsg(e.message,true);}
 }
 async function gateAcctRegister(){
   try{
-    const acct=gateVal('gateAcct'),pass=String((document.getElementById('gatePass')||{}).value||'');
-    if(!acct){gateMsg('请填写手机号或邮箱',true);return;}
+    const raw=gateVal('gateAcct'),pass=String((document.getElementById('gatePass')||{}).value||'');
+    const na=normalizeAccount(raw);
+    if(!na){gateMsg('请填写正确的手机号或邮箱',true);return;}
     if(pass.length<6){gateMsg('密码至少 6 位',true);return;}
-    gateResolveBase();
-    if(!confirm('将新建账号「'+acct+'」，并把本机的商品 / 会员 / 订单上传到该账号。\n\n确定创建吗？'))return;
+    if(acctGet(na.key)){gateMsg('本机已有这个账号（'+acctMask(na.key,na.type)+'），直接点「登录」即可',true);return;}
     gateMsg('正在创建账号…');
-    const d=await syncReq('POST','/api/register',{account:acct,password:pass,shopName:S.shop.name});
-    syncAdoptAuth(d,acct);
-    gateMsg('注册成功，正在上传本机数据…');
-    try{await syncNow({silent:true});}catch(e){}
+    await acctCreate(na.key,na.type,pass);
+    gateRemember(na.key,pass);
+    gateMsg('账号已创建（本机）：'+acctMask(na.key,na.type));
     gateEnterAsOwner();
+    gateSyncBind(na.key,pass);
   }catch(e){gateMsg(e.message,true);}
 }
 function switchStaff(){closeModal('staffModal');openLoginGate();}
@@ -2403,7 +2640,7 @@ function bkCSV(rows){
   }).join(',')).join('\r\n');
 }
 function bkPack(){
-  return {app:'通用收银台',version:'1.5.0',exportedAt:new Date().toISOString(),
+  return {app:'通用收银台',version:'1.5.1',exportedAt:new Date().toISOString(),
     shop:S.shop,products:S.products,members:S.members,orders:S.orders,
     shifts:S.shifts,stockLog:S.stockLog,smsLog:S.smsLog,holds:S.holds,
     seq:S.seq,cardSeq:S.cardSeq};
@@ -2434,7 +2671,7 @@ function expXLSX(){
     ['订单数',S.orders.length],
     ['库存流水',(S.stockLog||[]).length],
     ['短信记录',(S.smsLog||[]).length],
-    ['软件版本','通用收银台 1.5.0']
+    ['软件版本','通用收银台 1.5.1']
   ]});
   downloadBlob(bkBuildXLSX(sheets),'通用收银台数据_'+todayStr()+'.xlsx');
   toast('已导出 Excel（'+sheets.length+' 个工作表）');
@@ -4007,12 +4244,32 @@ async function syncLogin(){
     await syncNow({silent:true});
   }catch(e){_syncErr=e.message;toast(e.message);renderSyncBox();}
 }
+/* 退出登录：清掉同步账号 + 本机会话 → 直接回到登录界面 */
 async function syncLogout(){
-  if(!confirm('退出登录后本机不再自动同步（本机数据会保留）。确定退出？'))return;
+  if(!confirm('退出登录后将回到登录界面（本机数据会保留）。确定退出？'))return;
   try{await syncReq('POST','/api/logout');}catch(e){}
+  clearSyncAuth();
+  doAppLogout();
+}
+/* 员工管理里也能用的「退出登录」（没登同步账号时同样可用） */
+function appLogout(){
+  if(!confirm('退出登录后将回到登录界面（本机数据会保留）。确定退出？'))return;
+  if(SYNC.token){try{syncReq('POST','/api/logout').catch(()=>{});}catch(e){}clearSyncAuth();}
+  doAppLogout();
+}
+function clearSyncAuth(){
   SYNC.token='';SYNC.account='';SYNC.phone='';SYNC.email='';SYNC.userId='';
   SYNC.shopRev=0;SYNC.orderRev=0;SYNC.pushed=[];SYNC.lastSync=null;_syncErr='';
-  syncPersist();renderSyncBox();toast('已退出登录');
+  syncPersist();renderSyncBox();
+}
+/* 本机会话退出：关掉所有弹窗 → 弹回登录界面（记住的账号密码保留，下次可直接登） */
+function doAppLogout(){
+  SESSION=null;
+  try{localStorage.removeItem('pos_last_staff');}catch(e){}
+  document.querySelectorAll('.modal-bg').forEach(function(m){m.classList.add('hidden');});
+  renderHeader();
+  openLoginGate();
+  toast('已退出登录');
 }
 /* 桌面版：本机同步服务状态卡（网页/手机端返回空串，走手动说明） */
 function syncEmbedCard(){
@@ -4088,11 +4345,22 @@ function renderSyncBox(){
       +'<p class="cfg-help">换手机、换电脑后，填<b>同一个服务器地址</b>并登录<b>同一个账号</b>，'
       +'商品、会员、订单就会自动对齐。订单按「只增不改」的增量方式同步，不会互相覆盖。</p>';
   }else{
+    const locals=Object.keys(ACCTS).map(function(k){return ACCTS[k];});
     box.innerHTML=
-      '<p class="pill">登录后，本店的商品、会员、订单会在所有设备之间自动同步。'
-      +'没登录也可以正常收银，数据只存在本机。</p>'
+      '<p class="pill">本机账号：<b>不需要服务器</b>也能注册登录（收银员登录界面上就有「账号登录」入口）。'
+      +'想让手机 / 多台电脑看到同一份数据，再展开下面的「多端同步」。</p>'
+      +(locals.length?('<div class="field"><label>本机已注册的账号（'+locals.length+' 个）</label>'
+        +locals.map(function(r){
+          return '<div class="row" style="justify-content:space-between;align-items:center;gap:8px;'
+            +'border:1px solid var(--line);border-radius:10px;padding:6px 10px;margin-bottom:6px">'
+            +'<div><b>'+esc(acctMask(r.account,r.accountType))+'</b> '
+            +'<span class="tag">'+(r.accountType==='email'?'邮箱':'手机号')+'</span></div>'
+            +'<button class="ghost sm" onclick="delLocalAcct(\''+esc(r.account)+'\')">删除</button></div>';
+        }).join('')+'</div>'):'')
+      +'<details style="margin:8px 0"><summary style="cursor:pointer;font-size:13px;color:var(--muted)">'
+      +'多端同步（可选 · 不配也能正常收银）</summary>'
       +card
-      +'<div class="field"><label>同步服务器地址</label>'
+      +'<div class="field" style="margin-top:8px"><label>同步服务器地址</label>'
       +'<input id="syncBase" value="'+esc(SYNC.base)+'" placeholder="http://192.168.1.5:8787"></div>'
       +(isDesktop()
         ? '<p class="cfg-help">桌面版的标准端口是 <code class="inline">8787</code>，'
@@ -4113,12 +4381,21 @@ function renderSyncBox(){
       +'<button class="ghost" onclick="syncLogin()">已有账号，登录</button>'
       +'<button class="ghost" onclick="syncTest()">测试连接</button>'
       +'</div>'
-      +'<p class="cfg-help">手机号与邮箱<b>都能当账号</b>，同一个账号在所有设备上登录即可共享数据。'
-      +'收银员登录界面上也有「账号登录」入口，不必先进设置页。</p>'
+      +'<p class="cfg-help">手机号与邮箱<b>都能当账号</b>，同一个账号在所有设备上登录即可共享数据。</p>'
+      +'</details>'
       +(_syncErr?('<p class="cfg-help" style="color:var(--danger)">'+esc(_syncErr)+'</p>'):'');
   }
 }
+/* 删除本机账号（忘记密码时的兜底：删掉重新注册，服务器数据与业务数据都不受影响） */
+function delLocalAcct(key){
+  if(!confirm('删除本机账号「'+key+'」？\n\n删除后该账号在这台设备上需要重新注册；'
+    +'服务器上的数据和本机的商品/会员/订单都不会动。'))return;
+  acctDel(key);
+  try{const s=gateSaved();if(s&&s.account===key)localStorage.removeItem(GATE_SAVE_KEY);}catch(e){}
+  renderSyncBox();toast('已删除本机账号');
+}
 function syncBoot(){
+  acctLoad();                 // 本机账号库（离线登录用）
   syncEmbedBoot();            // 桌面版：先接内嵌服务状态（异步，到了会自动重绘并回填地址）
   syncLoad();
   renderSyncBox();

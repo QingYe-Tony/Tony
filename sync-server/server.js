@@ -277,7 +277,15 @@ async function handle(req, res, url) {
     const password = String(b.password || '');
     if (!acc) return send(res, 400, { error: '请填写正确的手机号或邮箱' });
     const user = DB.users.find(u => accountKeyOf(u) === acc.key);
-    if (!user || hashPassword(password, user.salt) !== user.hash) {
+    // 「账号不存在」(404) 与「密码错误」(401) 分开返回：
+    // 客户端据此决定是提示密码错，还是在本机新开一个同名账号
+    if (!user) {
+      return send(res, 404, {
+        error: (acc.type === 'phone' ? '该手机号' : '该邮箱') + '尚未注册',
+        notFound: true,
+      });
+    }
+    if (hashPassword(password, user.salt) !== user.hash) {
       return send(res, 401, { error: '账号或密码不正确' });
     }
     const token = issueToken(user);
