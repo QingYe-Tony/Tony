@@ -140,6 +140,18 @@
   details.docbox pre{background:#0f172a;color:#e2e8f0;padding:10px;border-radius:8px;overflow:auto;
     font-size:11.5px;line-height:1.55;max-height:260px;margin:8px 0 0}
   .switch-row{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600;margin:8px 0}
+  /* 内嵌同步服务状态卡 */
+  .sync-card{border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin:8px 0;background:#fafbfc}
+  .sync-card.ok{border-color:#bbf7d0;background:#f0fdf4}
+  .sync-card.bad{border-color:#fecaca;background:#fef2f2}
+  .sc-head{display:flex;align-items:center;gap:7px;font-size:13px;font-weight:700;margin-bottom:4px}
+  .sync-card.ok .sc-head{color:#15803d}
+  .sync-card.bad .sc-head{color:#b91c1c}
+  .sync-dot{width:8px;height:8px;border-radius:50%;flex:none}
+  .sync-dot.ok{background:var(--ok)} .sync-dot.bad{background:var(--danger)} .sync-dot.wait{background:#94a3b8}
+  .sync-kv{display:flex;align-items:center;gap:8px;font-size:12px;margin:5px 0;flex-wrap:wrap}
+  .sync-kv>span:first-child{color:var(--muted);min-width:104px}
+  button.ghost.sm{padding:2px 9px;font-size:11.5px;line-height:1.5}
   .switch-row input[type=checkbox]{width:auto;transform:scale(1.15)}
 
   /* ============ 备份中心 ============ */
@@ -2250,7 +2262,7 @@ function bkCSV(rows){
   }).join(',')).join('\r\n');
 }
 function bkPack(){
-  return {app:'通用收银台',version:'1.3.1',exportedAt:new Date().toISOString(),
+  return {app:'通用收银台',version:'1.4.0',exportedAt:new Date().toISOString(),
     shop:S.shop,products:S.products,members:S.members,orders:S.orders,
     shifts:S.shifts,stockLog:S.stockLog,smsLog:S.smsLog,holds:S.holds,
     seq:S.seq,cardSeq:S.cardSeq};
@@ -2281,7 +2293,7 @@ function expXLSX(){
     ['订单数',S.orders.length],
     ['库存流水',(S.stockLog||[]).length],
     ['短信记录',(S.smsLog||[]).length],
-    ['软件版本','通用收银台 1.3.1']
+    ['软件版本','通用收银台 1.4.0']
   ]});
   downloadBlob(bkBuildXLSX(sheets),'通用收银台数据_'+todayStr()+'.xlsx');
   toast('已导出 Excel（'+sheets.length+' 个工作表）');
@@ -3510,7 +3522,12 @@ function initUI(){
 /* ==================================================================
    账号登录与多端同步
    ------------------------------------------------------------------
-   后端是安装包里的 sync-server（零依赖 Node 程序，数据存本机 db.json）。
+   后端是同步服务器（零依赖 Node 程序，数据存本机 db.json）：
+   · 桌面版（Windows / macOS / Linux）：应用**启动时自动**在本机跑一个，
+     默认 http://localhost:8787，参数见「设置 → 账号登录与多端同步」。
+     数据落在用户数据目录（见面板上的「数据目录」）。
+   · 手机 / 平板 / 网页版：本身跑不了 Node，需要连到同一 WiFi 下
+     那台跑着同步服务的电脑，地址用面板上给出的局域网地址。
    所有端登录同一个账号 → 商品 / 会员 / 订单 在所有设备之间保持一致。
    · 整店数据（店铺设置、商品、会员、库存流水、短信、交班、挂单）走 /api/shop，
      用 rev 版本号做乐观并发；拉取时「本机优先合并」，本机独有的记录不会丢。
@@ -3520,6 +3537,33 @@ const SYNC_KEY='pos_sync_v1';
 const SYNC_DEF={base:'',token:'',email:'',userId:'',shopRev:0,orderRev:0,lastSync:null,auto:true,pushed:[]};
 let SYNC=Object.assign({},SYNC_DEF);
 let _syncTimer=null,_syncing=false,_syncErr='';
+/* 桌面版内嵌同步服务的状态（由主进程通过 preload 桥接提供；网页/手机端为 null） */
+let EMBED=null;
+let _embedWaiters=[];
+function isDesktop(){return !!(window.electron&&window.electron.getSyncServerInfo);}
+function syncEmbedApply(info){
+  if(!info)return;
+  EMBED=info;
+  // 桌面版：把地址自动落到内嵌服务的实际端口上（用户不用手填）
+  // 只在用户没手工改过地址时才覆盖（localhost/127.0.0.1 视为「默认值」）
+  if(info.ok&&info.base&&!info.starting){
+    const cur=String(SYNC.base||'');
+    const isLocalDefault=!cur||/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(cur);
+    if(isLocalDefault){SYNC.base=info.base;syncPersist();}
+  }
+  renderSyncBox();
+  if(!info.starting)_embedWaiters.splice(0).forEach(fn=>{try{fn(EMBED);}catch(e){}});
+}
+function syncEmbedWait(fn){
+  if(EMBED)return fn(EMBED);
+  _embedWaiters.push(fn);
+}
+/* 桌面版启动时向主进程要一次内嵌服务状态，并订阅后续变化 */
+function syncEmbedBoot(){
+  if(!isDesktop())return;
+  if(window.electron.onSyncServerInfo)window.electron.onSyncServerInfo(info=>syncEmbedApply(info));
+  window.electron.getSyncServerInfo().then(info=>syncEmbedApply(info)).catch(()=>{});
+}
 
 const SYNC_DEVICE=(function(){
   let d='';
@@ -3535,6 +3579,7 @@ const SYNC_DEVICE=(function(){
 })();
 
 function syncBaseDefault(){
+  if(EMBED&&EMBED.ok&&EMBED.base)return EMBED.base;   // 桌面版：直接用内嵌服务的实际端口
   const h=(location&&location.hostname)||'';
   const lan=h&&!/^(localhost|127\.0\.0\.1)$/i.test(h)?h:null;
   return 'http://'+(lan||'localhost')+':8787';
@@ -3566,7 +3611,20 @@ async function syncReq(method,p,body){
   if(body!==undefined){opt.headers['Content-Type']='application/json';opt.body=JSON.stringify(body);}
   let res;
   try{res=await fetch(url,opt);}
-  catch(e){throw new Error('连不上同步服务器（'+base+'）。请确认服务器已启动，且本机与服务器在同一个网络。');}
+  catch(e){
+    let hint;
+    if(EMBED&&EMBED.ok){
+      hint='本机同步服务应当运行在 '+EMBED.base+'（桌面版启动时会自动拉起）。若仍连不上，请重启应用；手机等其他设备请填局域网地址'
+        +((EMBED.lan&&EMBED.lan.length)?('，例如 '+EMBED.lan[0]):'')+'。';
+    }else if(EMBED&&!EMBED.ok&&!EMBED.starting){
+      hint='本机同步服务启动失败'+(EMBED.error?('（'+EMBED.error+'）'):'')+'，请重启应用后重试。';
+    }else if(isDesktop()){
+      hint='本机同步服务还在启动中，请等几秒后点「测试连接」重试。';
+    }else{
+      hint='请确认那台运行同步服务的电脑已开机并保持程序开着，且本机与它连在同一个网络（同一 WiFi / 同一路由器）。';
+    }
+    throw new Error('连不上同步服务器（'+base+'）。'+hint);
+  }
   let data=null;
   try{data=await res.json();}catch(e){}
   if(!res.ok){
@@ -3790,10 +3848,54 @@ async function syncLogout(){
   SYNC.shopRev=0;SYNC.orderRev=0;SYNC.pushed=[];SYNC.lastSync=null;_syncErr='';
   syncPersist();renderSyncBox();toast('已退出登录');
 }
+/* 桌面版：本机同步服务状态卡（网页/手机端返回空串，走手动说明） */
+function syncEmbedCard(){
+  if(!isDesktop())return '';
+  const esc2=escapeHtml;
+  if(!EMBED)return '<div class="sync-card"><div class="sc-head"><span class="sync-dot wait"></span>正在检查本机同步服务…</div></div>';
+  if(EMBED.starting)return '<div class="sync-card"><div class="sc-head"><span class="sync-dot wait"></span>正在启动本机同步服务…</div></div>';
+  if(!EMBED.ok){
+    return '<div class="sync-card bad">'
+      +'<div class="sc-head"><span class="sync-dot bad"></span>本机同步服务启动失败</div>'
+      +'<div class="cfg-help">'+(EMBED.error?esc2(EMBED.error):'未知错误')+'</div>'
+      +'<div class="cfg-help">先重启应用重试；若仍失败，可用安装包 <code class="inline">sync-server</code> 文件夹里的'
+      +'「启动同步服务器」手动启动，再点击上方「测试连接」。</div></div>';
+  }
+  let h='<div class="sync-card ok">'
+    +'<div class="sc-head"><span class="sync-dot ok"></span>本机同步服务 已自动启动'
+    +(EMBED.reused?'（沿用已在运行的实例）':'')+'</div>'
+    +'<div class="sync-kv"><span>本机地址</span><code class="inline">'+esc2(EMBED.base)+'</code></div>';
+  if(EMBED.lan&&EMBED.lan.length){
+    h+='<div class="sync-kv"><span>手机/其他电脑填</span><code class="inline">'+esc2(EMBED.lan[0])+'</code>'
+      +'<button class="ghost sm" onclick="syncCopy(\''+esc2(EMBED.lan[0])+'\')">复制</button></div>';
+    if(EMBED.lan.length>1)
+      h+='<div class="cfg-help">其他网卡地址：'+EMBED.lan.slice(1).map(esc2).join('、')+'</div>';
+  }else{
+    h+='<div class="cfg-help">未检测到局域网地址；手机同步需先把这台电脑连上 WiFi。</div>';
+  }
+  h+='<div class="sync-kv"><span>数据目录</span><code class="inline">'+esc2(EMBED.dataDir||'')+'</code>'
+    +'<button class="ghost sm" onclick="syncOpenDir()">打开</button></div>'
+    +'<div class="cfg-help">各端填<b>同一个服务器地址</b>、登录<b>同一个账号</b>，数据即自动对齐。'
+    +'手机请填上面那个局域网地址（需和这台电脑在同一个 WiFi）。</div>'
+    +'</div>';
+  return h;
+}
+function syncCopy(text){
+  const t=String(text||'');
+  if(navigator.clipboard&&navigator.clipboard.writeText){
+    navigator.clipboard.writeText(t).then(()=>toast('已复制：'+t)).catch(()=>toast('复制失败，请手动输入：'+t));
+  }else{toast('请手动输入：'+t);}
+}
+function syncOpenDir(){
+  if(window.electron&&window.electron.openSyncDataDir){
+    window.electron.openSyncDataDir().then(r=>{if(r&&!r.ok)toast('打不开目录：'+(r.error||''));}).catch(()=>{});
+  }
+}
 function renderSyncBox(){
   const box=document.getElementById('syncBox');
   if(!box)return;
   const esc=escapeHtml;
+  const card=syncEmbedCard();
   if(SYNC.token){
     const st=_syncing?'同步中…':(_syncErr?'同步失败':(SYNC.lastSync?'已同步':'尚未同步'));
     const color=_syncErr?'color:var(--danger)':(_syncing?'':'color:var(--ok)');
@@ -3805,6 +3907,7 @@ function renderSyncBox(){
       +(SYNC.lastSync?('<span class="pill">上次 '+esc(fmtShortTime(SYNC.lastSync))+'</span>'):'')
       +'</div>'
       +(_syncErr?('<p class="cfg-help" style="color:var(--danger)">'+esc(_syncErr)+'</p>'):'')
+      +card
       +'<div class="row" style="margin:10px 0;gap:8px;flex-wrap:wrap">'
       +'<button class="primary" onclick="syncNow()">立即同步</button>'
       +'<button class="ghost" onclick="syncTest()">测试连接</button>'
@@ -3822,11 +3925,17 @@ function renderSyncBox(){
     box.innerHTML=
       '<p class="pill">登录后，本店的商品、会员、订单会在所有设备之间自动同步。'
       +'没登录也可以正常收银，数据只存在本机。</p>'
+      +card
       +'<div class="field"><label>同步服务器地址</label>'
       +'<input id="syncBase" value="'+esc(SYNC.base)+'" placeholder="http://192.168.1.5:8787"></div>'
-      +'<p class="cfg-help">服务器程序在安装包的 <code class="inline">sync-server</code> 文件夹里：'
-      +'在一台电脑上双击「启动同步服务器」，窗口里会显示局域网地址；'
-      +'手机、其他电脑连同一个 WiFi 后填那个地址即可。</p>'
+      +(isDesktop()
+        ? '<p class="cfg-help">桌面版的标准端口是 <code class="inline">8787</code>，'
+          +'上面这个地址启动应用时已自动填好；被占用时会自动顺延到 8788/8789…，'
+          +'此时以状态卡里显示的端口为准。</p>'
+        : '<p class="cfg-help">服务器程序在安装包的 <code class="inline">sync-server</code> 文件夹里：'
+          +'在一台电脑上双击「启动同步服务器」，窗口里会显示局域网地址；'
+          +'手机、其他电脑连同一个 WiFi 后填那个地址即可。'
+          +'如果那台电脑装的是桌面版收银台，就不用再手动启动——它自己会跑。</p>')
       +'<div class="row">'
       +'<div class="field" style="flex:1"><label>邮箱</label><input id="syncEmail" type="email" placeholder="you@example.com"></div>'
       +'<div class="field" style="flex:1"><label>密码（至少 6 位）</label><input id="syncPass" type="password" placeholder="••••••"></div>'
@@ -3840,10 +3949,13 @@ function renderSyncBox(){
   }
 }
 function syncBoot(){
+  syncEmbedBoot();            // 桌面版：先接内嵌服务状态（异步，到了会自动重绘并回填地址）
   syncLoad();
   renderSyncBox();
   window.addEventListener('online',()=>{if(SYNC.token&&SYNC.auto)syncNow({silent:true});});
-  if(SYNC.token&&SYNC.auto)setTimeout(()=>syncNow({silent:true}),1500);
+  // 等内嵌服务就绪后再自动同步一次（避免开机抢跑导致首次同步失败）
+  syncEmbedWait(()=>{if(SYNC.token&&SYNC.auto)syncNow({silent:true});});
+  if(!isDesktop()&&SYNC.token&&SYNC.auto)setTimeout(()=>syncNow({silent:true}),1500);
 }
 
 load();initUI();syncBoot();

@@ -8,4 +8,12 @@ contextBridge.exposeInMainWorld('electron', {
   checkForUpdates: () => ipcRenderer.invoke('check-for-updates'),
   // 获取应用版本号
   getAppVersion: () => ipcRenderer.invoke('get-app-version'),
+
+  // ---- 内嵌同步服务 ----
+  // 查询状态：{ ok, starting, reused, port, base, lan[], dataDir, error, embedded }
+  getSyncServerInfo: () => ipcRenderer.invoke('sync-server-info'),
+  // 主进程主动推送状态变化（启动完成时）
+  onSyncServerInfo: (cb) => ipcRenderer.on('sync-server-info', (e, info) => cb(info)),
+  // 打开同步数据目录
+  openSyncDataDir: () => ipcRenderer.invoke('sync-server-open-data'),
 });

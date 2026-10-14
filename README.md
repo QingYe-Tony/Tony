@@ -1,4 +1,4 @@
-# 通用商户收银系统（跨平台版）v1.3.1
+# 通用商户收银系统（跨平台版）v1.4.0
 
 一套用纯前端（HTML/CSS/JS，零依赖、可离线）实现的商户收银系统，**覆盖 Windows / macOS / Linux / Android / iOS / 平板 / 手机**，对标「商户收银宝」类软件的核心功能。
 
@@ -58,18 +58,35 @@ py server.py
 
 ---
 
-## 二·五、多端同步（v1.3.1 新增）
+## 二·五、多端同步（v1.3.1 新增，v1.4.0 桌面版免手动启动）
 
-内置一个**零依赖的同步服务器**（`sync-server/`，只用 Node 内置模块），数据存在你自己的电脑上，不经过任何第三方云。
+内置一个**零依赖的同步服务器**（`sync-server/server.js`，只用 Node 内置模块：`http`/`fs`/`path`/`crypto`/`os`），
+数据存在你自己的电脑上，不经过任何第三方云。
+
+**桌面版（Windows / macOS / Linux）**：应用启动时自动在后台拉起同步服务，用户什么都不用做 ——
+`main.js` 会依次探测 8787–8792，遇到端口占用自动顺延，若占用者是本程序的实例则直接复用；
+数据写到用户数据目录（`…/通用收银台/sync-data/db.json`），不会写进只读的 asar 包内。
+
+**手机 / 网页版 / 独立部署**：本身跑不了 Node，需要连到同一 WiFi 下那台跑着同步服务的电脑：
 
 ```bash
 # 在一台电脑上启动（Windows 双击「启动同步服务器.bat」）
-node sync-server/server.js
+node sync-server/server.js              # 默认 8787
+PORT=9000 DATA_DIR=/var/pos node server.js   # 自定义端口 / 数据目录
+```
+
+也可以把它当模块内嵌到别的 Node 程序里：
+
+```js
+const { startServer } = require('./sync-server/server.js');
+const info = await startServer({ port: 8787, dataDir: '/path/to/data', embedded: true, silent: true });
+// info = { port, host, lan: [...], dataDir, dbFile, close() }
 ```
 
 然后在每台设备的「设置 → 账号登录与多端同步」里填**同一个服务器地址 + 同一个账号**即可。
+桌面版面板顶部会显示绿色状态卡（本机地址 / 手机该填的局域网地址 / 数据目录），地址自动填好，点「复制」即可发到手机。
 
-- **账号**：邮箱 + 密码注册；密码用 PBKDF2-SHA512 + 随机盐（12 万次迭代）存储，库里没有明文；登录发 30 天有效令牌。
+- **账号**：邮箱 + 密码注册；密码用 PBKDF2-HMAC-SHA512 + 随机盐（12 万次迭代）存储，库里没有明文；登录发 30 天有效令牌。
 - **整店数据**（店铺设置 / 商品 / 会员 / 库存流水 / 短信 / 交班 / 挂单）走 `rev` 版本号乐观并发，
   拉取时按「本机优先」合并 —— 本机改过的记录不会被覆盖，云端独有的记录会追加进来。
 - **订单**走独立增量通道，按 `order_uid` 幂等 upsert，只增不改，不会把别端刚开的单冲掉。

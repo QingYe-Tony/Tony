@@ -2,11 +2,21 @@
 /*
  * 通用收银台 · 多端同步服务器
  * ---------------------------------------------------------------
- * 零依赖（只用 Node 内置模块），数据保存在本机 sync-server/data/db.json。
- * 账号密码用 PBKDF2-SHA512 + 随机盐存储，登录后发 30 天有效的令牌。
+ * 零依赖（只用 Node 内置模块），账号密码用 PBKDF2-HMAC-SHA512 + 随机盐存储，
+ * 登录后发 30 天有效的令牌。
  *
- * 启动：node server.js            （默认端口 8787）
- *      PORT=9000 node server.js   （自定义端口）
+ * 两种用法：
+ *
+ * ① 命令行直接跑（独立部署）：
+ *      node server.js                         默认端口 8787，数据存 ./data/db.json
+ *      PORT=9000 node server.js               自定义端口
+ *      DATA_DIR=/var/pos node server.js       自定义数据目录
+ *
+ * ② 被桌面端内嵌（require 调用，桌面版默认这样）：
+ *      const { startServer } = require('./sync-server/server.js');
+ *      const info = await startServer({ port: 8787, dataDir: '/path/to/userData/sync-data' });
+ *      // info = { port, host, lan: [...], dataDir, dbFile, close() }
+ *      内嵌模式下不会接管 SIGINT/SIGTERM，由宿主进程负责收尾。
  *
  * 所有端（Windows / macOS / Linux / 安卓 / iOS）在「设置 → 账号登录与多端同步」
  * 里填同一个服务器地址 + 同一个账号，即可看到同一份数据。
@@ -19,20 +29,28 @@ const path = require('path');
 const crypto = require('crypto');
 const os = require('os');
 
-const PORT = Number(process.env.PORT || 8787);
-const DATA_DIR = process.env.DATA_DIR ? path.resolve(process.env.DATA_DIR) : path.join(__dirname, 'data');
-const DB_FILE = path.join(DATA_DIR, 'db.json');
+const DEFAULT_PORT = 8787;
 const BODY_LIMIT = 32 * 1024 * 1024;   // 单次请求体上限 32MB（整店数据可能较大）
 const TOKEN_DAYS = 30;
+const SERVICE_NAME = '通用收银台同步服务器';
+const SERVICE_TAG = 'merchant-pos-sync';   // /health 里用它做「是不是本程序的服务器」判定
+
+/* -------------------------------------------------------------- 运行时状态 */
+
+const EMPTY_DB = () => ({ users: [], tokens: {}, shops: {}, orders: {} });
+
+let DB = EMPTY_DB();
+let dbReady = false;
+let DATA_DIR = '';
+let DB_FILE = '';
+let PORT = DEFAULT_PORT;
+let saveTimer = null;
+let started = false;
 
 /* ------------------------------------------------------------------ 存储 */
 
-const EMPTY_DB = () => ({ users: [], tokens: {}, shops: {}, orders: {} });
-let DB = EMPTY_DB();
-let dbReady = false;
-
 function ensureDir() {
-  if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+  if (DATA_DIR && !fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 }
 
 function loadDB() {
@@ -55,13 +73,12 @@ function loadDB() {
   dbReady = true;
 }
 
-let saveTimer = null;
 function saveSoon() {
   if (saveTimer) return;
   saveTimer = setTimeout(() => { saveTimer = null; saveDB(); }, 120);
 }
 function saveDB() {
-  if (!dbReady) return;
+  if (!dbReady || !DB_FILE) return;
   ensureDir();
   const tmp = DB_FILE + '.tmp';
   try {
@@ -71,8 +88,6 @@ function saveDB() {
     console.error('[error] 数据写入失败：' + e.message);
   }
 }
-process.on('SIGINT', () => { saveDB(); console.log('\n已保存并退出。'); process.exit(0); });
-process.on('SIGTERM', () => { saveDB(); process.exit(0); });
 
 /* -------------------------------------------------------------- 账号与令牌 */
 
@@ -157,7 +172,12 @@ async function handle(req, res, url) {
 
   if (p === '/' || p === '/health') {
     return send(res, 200, {
-      ok: true, service: '通用收银台同步服务器', version: 1,
+      ok: true,
+      service: SERVICE_NAME,
+      tag: SERVICE_TAG,          // 供客户端确认「是本程序的同步服务器」
+      version: 1,
+      port: PORT,
+      lan: lanAddresses(),
       users: DB.users.length,
       time: new Date().toISOString(),
     });
@@ -285,47 +305,162 @@ async function handle(req, res, url) {
   return send(res, 404, { error: '接口不存在' });
 }
 
-/* ----------------------------------------------------------------- 启动 */
+/* ------------------------------------------------------------------ 工具 */
 
-loadDB();
-
-const server = http.createServer((req, res) => {
-  let url;
-  try { url = new URL(req.url, 'http://localhost'); } catch (e) { return send(res, 400, { error: '非法请求' }); }
-  handle(req, res, url).catch(err => {
-    console.error('[error] ' + (err && err.stack || err));
-    send(res, 500, { error: String(err && err.message || err) });
-  });
-});
-
-server.listen(PORT, '0.0.0.0', () => {
+function lanAddresses() {
   const ifaces = os.networkInterfaces();
-  const lan = [];
+  const out = [];
   Object.keys(ifaces).forEach(name => {
     (ifaces[name] || []).forEach(i => {
-      if (i.family === 'IPv4' && !i.internal) lan.push(i.address);
+      if (i.family === 'IPv4' && !i.internal) out.push(i.address);
     });
   });
-  console.log('');
-  console.log('  ╔══════════════════════════════════════════════════════╗');
-  console.log('  ║        通用收银台 · 多端同步服务器 已启动            ║');
-  console.log('  ╚══════════════════════════════════════════════════════╝');
-  console.log('');
-  console.log('  本机地址（这台电脑上打开收银台就填这个）：');
-  console.log('      http://localhost:' + PORT);
-  console.log('');
-  if (lan.length) {
-    console.log('  局域网地址（手机 / 其他电脑连同一个 WiFi 就填这个）：');
-    lan.forEach(a => console.log('      http://' + a + ':' + PORT));
-    console.log('');
-  } else {
-    console.log('  （没检测到局域网地址，手机同步需先连上 WiFi 或做端口映射）');
-    console.log('');
+  return out;
+}
+
+/* ----------------------------------------------------------------- 启动 */
+
+/**
+ * 启动同步服务器。
+ * @param {object} [opts]
+ * @param {number}  [opts.port=8787]           监听端口
+ * @param {string}  [opts.dataDir]             数据目录（默认 ./data）
+ * @param {string}  [opts.host='0.0.0.0']      监听地址
+ * @param {boolean} [opts.embedded=false]      内嵌模式：不接管进程信号、不打印横幅
+ * @param {boolean} [opts.silent=false]        不打印任何日志
+ * @returns {Promise<{port:number,host:string,lan:string[],dataDir:string,dbFile:string,close:Function}>}
+ */
+function startServer(opts) {
+  opts = opts || {};
+  if (started) return Promise.reject(new Error('本进程已经启动过同步服务器'));
+  started = true;
+
+  PORT = Number(opts.port || process.env.PORT || DEFAULT_PORT);
+  DATA_DIR = opts.dataDir
+    ? path.resolve(opts.dataDir)
+    : (process.env.DATA_DIR ? path.resolve(process.env.DATA_DIR) : path.join(__dirname, 'data'));
+  DB_FILE = path.join(DATA_DIR, 'db.json');
+
+  const HOST = opts.host || '0.0.0.0';
+  const embedded = !!opts.embedded;
+  const silent = !!opts.silent;
+
+  loadDB();
+
+  // 独立运行时才接管信号，内嵌时由宿主进程负责收尾
+  if (!embedded) {
+    process.on('SIGINT', () => { saveDB(); console.log('\n已保存并退出。'); process.exit(0); });
+    process.on('SIGTERM', () => { saveDB(); process.exit(0); });
   }
-  console.log('  数据文件：' + DB_FILE);
-  console.log('  已注册账号：' + DB.users.length + ' 个');
-  console.log('');
-  console.log('  保持这个窗口开着即可；关掉窗口 = 停止同步服务。');
-  console.log('  按 Ctrl + C 退出。');
-  console.log('');
-});
+
+  return new Promise((resolve, reject) => {
+    const server = http.createServer((req, res) => {
+      let url;
+      try { url = new URL(req.url, 'http://localhost'); } catch (e) { return send(res, 400, { error: '非法请求' }); }
+      handle(req, res, url).catch(err => {
+        console.error('[error] ' + (err && err.stack || err));
+        send(res, 500, { error: String(err && err.message || err) });
+      });
+    });
+
+    server.on('error', err => {
+      started = false;
+      reject(err);
+    });
+
+    server.listen(PORT, HOST, () => {
+      const lan = lanAddresses();
+      const info = {
+        port: PORT,
+        host: HOST,
+        lan,
+        dataDir: DATA_DIR,
+        dbFile: DB_FILE,
+        close: () => new Promise(r => { saveDB(); server.close(() => r()); }),
+      };
+
+      if (!silent) {
+        console.log('');
+        console.log('  ╔══════════════════════════════════════════════════════╗');
+        console.log('  ║        通用收银台 · 多端同步服务器 已启动            ║');
+        console.log('  ╚══════════════════════════════════════════════════════╝');
+        console.log('');
+        console.log('  本机地址（这台电脑上打开收银台就填这个）：');
+        console.log('      http://localhost:' + PORT);
+        console.log('');
+        if (lan.length) {
+          console.log('  局域网地址（手机 / 其他电脑连同一个 WiFi 就填这个）：');
+          lan.forEach(a => console.log('      http://' + a + ':' + PORT));
+          console.log('');
+        } else {
+          console.log('  （没检测到局域网地址，手机同步需先连上 WiFi 或做端口映射）');
+          console.log('');
+        }
+        console.log('  数据文件：' + DB_FILE);
+        console.log('  已注册账号：' + DB.users.length + ' 个');
+        console.log('');
+        if (!embedded) {
+          console.log('  保持这个窗口开着即可；关掉窗口 = 停止同步服务。');
+          console.log('  按 Ctrl + C 退出。');
+          console.log('');
+        }
+      }
+
+      resolve(info);
+    });
+  });
+}
+
+/** 探测某个地址上是不是本程序的同步服务器（用于端口占用时复用已有实例） */
+function probeServer(port, host, timeoutMs) {
+  const base = 'http://' + (host || '127.0.0.1') + ':' + port;
+  return new Promise(resolve => {
+    let done = false;
+    const finish = v => { if (!done) { done = true; resolve(v); } };
+    let req;
+    try {
+      req = http.get(base + '/health', res => {
+        let raw = '';
+        res.setEncoding('utf8');
+        res.on('data', c => { raw += c; if (raw.length > 65536) req.destroy(); });
+        res.on('end', () => {
+          try {
+            const d = JSON.parse(raw);
+            finish(d && d.tag === SERVICE_TAG
+              ? { ok: true, base, port, lan: Array.isArray(d.lan) ? d.lan : [], users: d.users || 0 }
+              : { ok: false, reason: 'not-ours' });
+          } catch (e) { finish({ ok: false, reason: 'bad-json' }); }
+        });
+      });
+    } catch (e) { return finish({ ok: false, reason: 'error' }); }
+    req.setTimeout(timeoutMs || 900, () => { try { req.destroy(); } catch (e) {} finish({ ok: false, reason: 'timeout' }); });
+    req.on('error', () => finish({ ok: false, reason: 'error' }));
+  });
+}
+
+/* ------------------------------------------------------------ 命令行入口 */
+
+if (require.main === module) {
+  startServer({ port: Number(process.env.PORT || DEFAULT_PORT) })
+    .catch(err => {
+      if (err && err.code === 'EADDRINUSE') {
+        console.error('');
+        console.error('  ❌ 端口 ' + (process.env.PORT || DEFAULT_PORT) + ' 已被占用。');
+        console.error('     可能已经有一个同步服务器在跑了；或者换个端口：');
+        console.error('       PORT=9000 node server.js');
+        console.error('');
+      } else {
+        console.error('[error] 启动失败：' + (err && err.message || err));
+      }
+      process.exit(1);
+    });
+}
+
+module.exports = {
+  startServer,
+  probeServer,
+  lanAddresses,
+  SERVICE_TAG,
+  SERVICE_NAME,
+  DEFAULT_PORT,
+};
