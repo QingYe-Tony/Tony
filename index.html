@@ -569,7 +569,7 @@ exports.main_handler = async (event) => {
           导入时不挑格式（含真实 Excel 文件），拖进去自动识别。</p>
         <div class="row" style="margin:10px 0">
           <button class="ghost" onclick="loadDemo()">载入演示数据</button>
-          <button class="danger" onclick="wipeData()">清空全部数据</button>
+          <button class="danger" onclick="openClearData()">清空全部数据</button>
         </div>
         <hr style="border:none;border-top:1px solid var(--line);margin:14px 0">
         <h3>关于 / 更新</h3>
@@ -698,7 +698,7 @@ exports.main_handler = async (event) => {
 
     <h4 class="bk-h">三、危险操作</h4>
     <div class="row" style="margin:0">
-      <button class="danger" onclick="wipeData()">清空全部数据</button>
+      <button class="danger" onclick="openClearData()">清空全部数据</button>
     </div>
 
     <div class="row" style="justify-content:flex-end;margin-top:16px">
@@ -950,6 +950,34 @@ exports.main_handler = async (event) => {
     <div class="row" style="justify-content:flex-end;margin-top:12px">
       <button class="ghost" onclick="holdOrder()">把当前购物车挂起</button>
       <button class="primary" onclick="closeModal('holdsModal')">关闭</button>
+    </div>
+  </div>
+</div>
+
+<!-- 清空数据（分模块 + 密码授权） -->
+<div id="clearDataModal" class="modal-bg hidden">
+  <div class="modal" style="width:min(520px,100%)">
+    <h3>清空数据</h3>
+    <p class="cfg-help">可按模块分别清空，<b>会员数据始终保留</b>（不清空）。清空操作需要输入账号密码授权。</p>
+    <div class="field" style="display:flex;align-items:center;gap:8px;margin:10px 0">
+      <input type="checkbox" id="cdProducts" checked>
+      <label for="cdProducts" style="margin:0">清空商品（含库存 / 低库存预警 / 盘点 / 入库记录）</label>
+    </div>
+    <div class="field" style="display:flex;align-items:center;gap:8px;margin:10px 0">
+      <input type="checkbox" id="cdOrders" checked>
+      <label for="cdOrders" style="margin:0">清空订单（含交班 / 报表统计）</label>
+    </div>
+    <div class="field" style="display:flex;align-items:center;gap:8px;margin:10px 0;opacity:.72">
+      <input type="checkbox" disabled checked>
+      <label style="margin:0">会员（始终保留，不可清空）</label>
+    </div>
+    <hr style="border:none;border-top:1px solid var(--line);margin:12px 0">
+    <div class="field"><label>账号密码（授权清空）</label>
+      <input id="cdPass" type="password" placeholder="请输入登录密码" onkeydown="if(event.key==='Enter')doClearData()">
+    </div>
+    <div class="row" style="justify-content:flex-end;margin-top:8px">
+      <button class="ghost" onclick="closeModal('clearDataModal')">取消</button>
+      <button class="danger" onclick="doClearData()">确认清空</button>
     </div>
   </div>
 </div>
@@ -2890,7 +2918,7 @@ function bkCSV(rows){
   }).join(',')).join('\r\n');
 }
 function bkPack(){
-  return {app:'通用收银台',version:'1.5.4',exportedAt:new Date().toISOString(),
+  return {app:'通用收银台',version:'1.5.5',exportedAt:new Date().toISOString(),
     shop:S.shop,products:S.products,members:S.members,orders:S.orders,
     shifts:S.shifts,stockLog:S.stockLog,smsLog:S.smsLog,holds:S.holds,
     seq:S.seq,cardSeq:S.cardSeq};
@@ -2921,7 +2949,7 @@ function expXLSX(){
     ['订单数',S.orders.length],
     ['库存流水',(S.stockLog||[]).length],
     ['短信记录',(S.smsLog||[]).length],
-    ['软件版本','通用收银台 1.5.4']
+    ['软件版本','通用收银台 1.5.5']
   ]});
   downloadBlob(bkBuildXLSX(sheets),'通用收银台数据_'+todayStr()+'.xlsx');
   toast('已导出 Excel（'+sheets.length+' 个工作表）');
@@ -4001,7 +4029,53 @@ function importAll(input){
   if(!f)return;
   openBackup();importAnyFiles(input.files);input.value='';
 }
-function wipeData(){if(!confirm('将清空全部商品、会员、订单数据，不可恢复！建议先导出备份。确认？'))return;S=Object.assign(JSON.parse(JSON.stringify(DEF_S)),{shop:S.shop});normalize();save();initUI();toast('已清空');}
+/* 清空数据：按模块分别清空（商品 / 订单），会员始终保留；需账号密码授权。
+   修复「清空不生效 / 删不掉」：之前只把本机数组置空，没在云端登记删除，
+   4 秒自动同步 GET 会把云端旧数据拉回。现在清商品走墓碑 markDeleted、清订单推
+   deleted:true 上云，两端同步删除，GET 不会再拉回。 */
+function openClearData(){
+  const p=document.getElementById('cdProducts'),o=document.getElementById('cdOrders'),pw=document.getElementById('cdPass');
+  if(p)p.checked=true; if(o)o.checked=true; if(pw)pw.value='';
+  openModal('clearDataModal');
+}
+async function doClearData(){
+  const pw=String((document.getElementById('cdPass')||{}).value||'').trim();
+  if(!pw){toast('请输入账号密码授权');return;}
+  /* 密码授权：校验本机任一账号密码（优先当前登录账号） */
+  const keys=Object.keys(ACCTS||{});
+  let ok=false;
+  const tryKey=(SYNC.account&&ACCTS[SYNC.account])?SYNC.account:null;
+  if(tryKey&&await acctVerify(tryKey,pw))ok=true;
+  if(!ok){for(const k of keys){if(await acctVerify(k,pw)){ok=true;break;}}}
+  if(!ok){
+    if(!keys.length){toast('本机未设置账号，已跳过密码校验');}
+    else{toast('密码不正确，已取消清空');return;}
+  }
+  const cp=!!(document.getElementById('cdProducts')&&document.getElementById('cdProducts').checked);
+  const co=!!(document.getElementById('cdOrders')&&document.getElementById('cdOrders').checked);
+  if(!cp&&!co){toast('请至少选择一项要清空的数据');return;}
+  if(cp){
+    (S.products||[]).forEach(p=>markDeleted('products',p));
+    S.products=[];
+  }
+  if(co){
+    const ids=(S.orders||[]).map(o=>o.id).filter(Boolean);
+    if(ids.length)await pushOrderDeletes(ids);
+    S.orders=[];
+  }
+  /* 会员：始终保留，不处理 */
+  save();
+  try{await syncNow({silent:true});}catch(e){}
+  initUI();
+  toast('已清空所选数据（会员已保留）');
+  closeModal('clearDataModal');
+}
+/* 把订单删除推到云端（deleted:true），避免同步把旧订单拉回 */
+async function pushOrderDeletes(ids){
+  if(!SYNC.token||!ids||!ids.length)return;
+  const upserts=ids.map(id=>({order_uid:id,payload:null,deleted:true,clientUpdatedAt:new Date().toISOString()}));
+  try{await syncReq('PUT','/api/orders',{upserts});}catch(e){}
+}
 function loadDemo(){
   S.products=[
     {id:uid(),name:'可乐',barcode:'6901',cat:'饮料',price:3,cost:1.8,stock:100,safe:20,unit:'瓶',emoji:'🥤'},
