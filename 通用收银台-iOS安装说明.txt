@@ -1,12 +1,12 @@
-# 通用收银台 · iOS 安装说明（v1.5.7）
+# 通用收银台 · iOS 安装说明（v1.5.8）
 
 由于 iOS 不上架 App Store，安装包（.ipa）需通过「自签 / 侧载（Sideload）」装到 iPhone / iPad。
-以下三种方式任选其一，安装包文件名为 `通用收银台-1.5.7.ipa`。
+以下三种方式任选其一，安装包文件名为 `通用收银台-1.5.8.ipa`。
 
 ## 方式一：Sideloadly（最简单，Windows / macOS 均可）
 1. 电脑安装 Sideloadly（官网 https://sideloadly.io ）。
 2. iPhone 用数据线连电脑，并在手机上「信任此电脑」。
-3. Sideloadly 里选择你的设备，拖入 `通用收银台-1.5.7.ipa`，填写你的 Apple ID（普通账号即可）。
+3. Sideloadly 里选择你的设备，拖入 `通用收银台-1.5.8.ipa`，填写你的 Apple ID（普通账号即可）。
 4. 点 Start，等待签名安装完成。
 5. 手机：设置 → 通用 → VPN与设备管理 → 信任该 Apple ID 对应的开发者证书。
 6. 回到桌面打开「通用收银台」即可使用。
@@ -14,12 +14,12 @@
 
 ## 方式二：AltStore
 1. 电脑装好 AltServer（https://altstore.io ），iPhone 与电脑连同一 WiFi，并按引导在手机装好 AltStore。
-2. 手机打开 AltStore → My Apps → 点「+」→ 选择 `通用收银台-1.5.7.ipa`。
+2. 手机打开 AltStore → My Apps → 点「+」→ 选择 `通用收银台-1.5.8.ipa`。
 3. 用 Apple ID 签名安装；连着电脑开 AltServer 时会自动续签（免费账号同样 7 天一轮）。
 
 ## 方式三：Xcode 真机调试（macOS，有开发者账号）
 1. 数据线连 iPhone，打开 Xcode → Window → Devices and Simulators。
-2. 在 Installed Apps 里通过「+」装入 `通用收银台-1.5.7.ipa`，或用开发者证书签名后直接运行。
+2. 在 Installed Apps 里通过「+」装入 `通用收银台-1.5.8.ipa`，或用开发者证书签名后直接运行。
 
 ## 数据说明
 - iOS 版数据存在本机 App 沙盒（localStorage），换机、重装前请务必到「设置 → 备份与恢复中心」导出备份。
