@@ -2540,13 +2540,22 @@ function onCartQuery(){
   if(!q){sel.value='';nmEl.value='';phEl.value='';setMemberTip('');renderCart();return;}
   /* 搜索框里显示的正是当前已选会员（取单 / 开卡回填）→ 别当新查询重新识别 */
   const cur=S.members.find(x=>x.id===sel.value);
-  if(cur&&q===memberDisplay(cur)){
+  /* 已选中会员时，只要框里还是这位（完整显示 / 只删了尾号 / 输回本机号），就保持选中，
+     绝不把框强行复原成「姓名 · 尾号」—— 否则删号码会又弹回来 */
+  const qCore=q.replace(/ ·\s*\d*$/,'').trim();
+  if(cur&&(q===memberDisplay(cur)||qCore===(cur.name||'')||q===(cur.phone||''))){
     setMemberTip('✅ 已选会员 <b>'+escapeHtml(cur.name||'—')+'</b>（'+(cur.no||'—')+' · 尾号'+(cur.phone||'').slice(-4)+'）· 积分 '+cur.points+' · 余额 '+money(cur.balance));
     renderCart();return;
   }
   const hits=memberMatch(q);
   if(hits.length===1){
     const m=hits[0];
+    /* 正在编辑的就是当前已选中的这位（删了尾号 / 改成部分名等）：
+       保持选中，但【绝不】把框强行复原成「姓名 · 尾号」，否则删号码会又弹回来 */
+    if(cur&&m.id===cur.id){
+      setMemberTip('✅ 已选会员 <b>'+escapeHtml(cur.name||'—')+'</b>（'+(cur.no||'—')+' · 尾号'+(cur.phone||'').slice(-4)+'）· 积分 '+cur.points+' · 余额 '+money(cur.balance));
+      renderCart();return;
+    }
     sel.value=m.id;nmEl.value=m.name||'';phEl.value=m.phone||'';
     qEl.value=memberDisplay(m);
     setMemberTip('✅ 已识别会员 <b>'+escapeHtml(m.name||'—')+'</b>（'+(m.no||'—')+' · 尾号'+(m.phone||'').slice(-4)+'）· 积分 '+m.points+' · 余额 '+money(m.balance));
@@ -2928,7 +2937,7 @@ function bkCSV(rows){
   }).join(',')).join('\r\n');
 }
 function bkPack(){
-  return {app:'通用收银台',version:'1.5.7',exportedAt:new Date().toISOString(),
+  return {app:'通用收银台',version:'1.5.8',exportedAt:new Date().toISOString(),
     shop:S.shop,products:S.products,members:S.members,orders:S.orders,
     shifts:S.shifts,stockLog:S.stockLog,smsLog:S.smsLog,holds:S.holds,
     seq:S.seq,cardSeq:S.cardSeq};
@@ -2959,7 +2968,7 @@ function expXLSX(){
     ['订单数',S.orders.length],
     ['库存流水',(S.stockLog||[]).length],
     ['短信记录',(S.smsLog||[]).length],
-    ['软件版本','通用收银台 1.5.7']
+    ['软件版本','通用收银台 1.5.8']
   ]});
   downloadBlob(bkBuildXLSX(sheets),'通用收银台数据_'+todayStr()+'.xlsx');
   toast('已导出 Excel（'+sheets.length+' 个工作表）');
