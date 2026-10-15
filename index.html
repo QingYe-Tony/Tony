@@ -958,19 +958,10 @@ exports.main_handler = async (event) => {
 <div id="clearDataModal" class="modal-bg hidden">
   <div class="modal" style="width:min(520px,100%)">
     <h3>清空数据</h3>
-    <p class="cfg-help">可按模块分别清空，<b>会员数据始终保留</b>（不清空）。清空操作需要输入账号密码授权。</p>
-    <div class="field" style="display:flex;align-items:center;gap:8px;margin:10px 0">
-      <input type="checkbox" id="cdProducts" checked>
-      <label for="cdProducts" style="margin:0">清空商品（含库存 / 低库存预警 / 盘点 / 入库记录）</label>
-    </div>
-    <div class="field" style="display:flex;align-items:center;gap:8px;margin:10px 0">
-      <input type="checkbox" id="cdOrders" checked>
-      <label for="cdOrders" style="margin:0">清空订单（含交班 / 报表统计）</label>
-    </div>
-    <div class="field" style="display:flex;align-items:center;gap:8px;margin:10px 0;opacity:.72">
-      <input type="checkbox" disabled checked>
-      <label style="margin:0">会员（始终保留，不可清空）</label>
-    </div>
+    <p class="cfg-help">勾选要清空的模块，输入账号密码授权后点「确认清空」：</p>
+    <div class="switch-row"><input type="checkbox" id="cdProducts" checked> 清空商品（含库存 / 低库存预警 / 盘点 / 入库记录）</div>
+    <div class="switch-row"><input type="checkbox" id="cdOrders" checked> 清空订单（含交班 / 报表统计）</div>
+    <p class="cfg-help" style="margin:10px 0 0">🔒 会员<b>始终保留</b> —— 这里没有清空会员的选项，会员数据不会被清掉。</p>
     <hr style="border:none;border-top:1px solid var(--line);margin:12px 0">
     <div class="field"><label>账号密码（授权清空）</label>
       <input id="cdPass" type="password" placeholder="请输入登录密码" onkeydown="if(event.key==='Enter')doClearData()">
@@ -1864,7 +1855,7 @@ function markDeleted(key,rec){
   const k=f?String(f(rec)):String((rec&&(rec.id||rec.phone||rec.no||rec.name))||'');
   if(!k)return;
   if(!S._del[key].includes(k))S._del[key].push(k);
-  if(S._del[key].length>1000)S._del[key]=S._del[key].slice(-1000);  // 防止无限增长
+  if(S._del[key].length>5000)S._del[key]=S._del[key].slice(-5000);  // 防止无限增长（清空大库时墓碑可能上千条）
 }
 function delMember(id){if(!confirm('删除会员？'))return;const m=S.members.find(x=>x.id===id);if(m)markDeleted('members',m);S.members=S.members.filter(x=>x.id!==id);save();renderMembers();fillMemberSelect();}
 function openTopup(id){const m=S.members.find(x=>x.id===id);if(!m)return;window._topupId=id;document.getElementById('topupName').textContent=(m.no?m.no+' · ':'')+m.name+' · 当前余额 '+money(m.balance)+(m.phone?(' · '+m.phone):' · 未留手机');document.getElementById('topupAmt').value='';document.getElementById('topupSms').checked=!!(smsCfg().enabled&&m.phone);openModal('topupModal');}
@@ -2918,7 +2909,7 @@ function bkCSV(rows){
   }).join(',')).join('\r\n');
 }
 function bkPack(){
-  return {app:'通用收银台',version:'1.5.5',exportedAt:new Date().toISOString(),
+  return {app:'通用收银台',version:'1.5.6',exportedAt:new Date().toISOString(),
     shop:S.shop,products:S.products,members:S.members,orders:S.orders,
     shifts:S.shifts,stockLog:S.stockLog,smsLog:S.smsLog,holds:S.holds,
     seq:S.seq,cardSeq:S.cardSeq};
@@ -2949,7 +2940,7 @@ function expXLSX(){
     ['订单数',S.orders.length],
     ['库存流水',(S.stockLog||[]).length],
     ['短信记录',(S.smsLog||[]).length],
-    ['软件版本','通用收银台 1.5.5']
+    ['软件版本','通用收银台 1.5.6']
   ]});
   downloadBlob(bkBuildXLSX(sheets),'通用收银台数据_'+todayStr()+'.xlsx');
   toast('已导出 Excel（'+sheets.length+' 个工作表）');
@@ -4054,27 +4045,34 @@ async function doClearData(){
   const cp=!!(document.getElementById('cdProducts')&&document.getElementById('cdProducts').checked);
   const co=!!(document.getElementById('cdOrders')&&document.getElementById('cdOrders').checked);
   if(!cp&&!co){toast('请至少选择一项要清空的数据');return;}
+  let cloudOk=true;
   if(cp){
     (S.products||[]).forEach(p=>markDeleted('products',p));
     S.products=[];
   }
   if(co){
-    const ids=(S.orders||[]).map(o=>o.id).filter(Boolean);
-    if(ids.length)await pushOrderDeletes(ids);
+    const list=S.orders||[];
+    /* 先在本机登记订单墓碑：即使下面向云端推送失败（断网 / 服务器没开 / 他端又推回来），
+       同步拉取也会跳过这些订单，不会出现「删完了又出现」 */
+    list.forEach(o=>markDeleted('orders',o));
+    const ids=list.map(o=>o.id).filter(Boolean);
+    if(ids.length)cloudOk=await pushOrderDeletes(ids);
     S.orders=[];
   }
   /* 会员：始终保留，不处理 */
   save();
   try{await syncNow({silent:true});}catch(e){}
   initUI();
-  toast('已清空所选数据（会员已保留）');
+  toast(cloudOk?'已清空所选数据（会员已保留）'
+               :'已清空所选数据；云端订单删除没成功，但本机不会再恢复');
   closeModal('clearDataModal');
 }
 /* 把订单删除推到云端（deleted:true），避免同步把旧订单拉回 */
 async function pushOrderDeletes(ids){
-  if(!SYNC.token||!ids||!ids.length)return;
+  if(!SYNC.token||!ids||!ids.length)return true;
   const upserts=ids.map(id=>({order_uid:id,payload:null,deleted:true,clientUpdatedAt:new Date().toISOString()}));
-  try{await syncReq('PUT','/api/orders',{upserts});}catch(e){}
+  try{await syncReq('PUT','/api/orders',{upserts});return true;}
+  catch(e){return false;}   // 失败也没关系：本机墓碑已登记，同步不会再把这些订单拉回
 }
 function loadDemo(){
   S.products=[
@@ -4455,11 +4453,19 @@ async function syncPullOrders(){
   const since=Number(SYNC.orderRev||0);
   const res=await syncReq('GET','/api/orders?since='+since);
   const list=Array.isArray(res.orders)?res.orders:[];
+  /* 本机已删除的订单：不管云端/别的设备怎么推（哪怕是 deleted:false 的新记录），
+     都不再拉回 —— 否则「清空订单 / 删完了又出现」。 */
+  const tomb=new Set(((S._del&&S._del.orders)||[]).map(String));
   let added=0;
   list.forEach(rec=>{
     if(!rec||!rec.order_uid)return;
-    const hit=(S.orders||[]).find(o=>o.id===rec.order_uid);
-    if(rec.deleted){if(hit)S.orders=S.orders.filter(o=>o.id!==rec.order_uid);return;}
+    const uid=String(rec.order_uid);
+    const hit=(S.orders||[]).find(o=>String(o.id)===uid);
+    if(tomb.has(uid)){
+      if(hit)S.orders=S.orders.filter(o=>String(o.id)!==uid);
+      return;
+    }
+    if(rec.deleted){if(hit)S.orders=S.orders.filter(o=>String(o.id)!==uid);return;}
     if(hit){if(rec.payload&&rec.payload.refunded)hit.refunded=true;return;}
     if(rec.payload){S.orders.push(rec.payload);added++;}
   });
