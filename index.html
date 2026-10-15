@@ -303,22 +303,19 @@
             <div class="sum-row total"><span>应付</span><span id="sumPay">0.00</span></div>
 
             <div class="field" style="margin-top:10px">
-              <label>选择会员（积分 / 余额抵扣）</label>
-              <select id="cartMember" onchange="onMemberPicked()"><option value="">散客（无会员）</option></select>
-            </div>
-
-            <div class="field">
-              <label>顾客姓名 / 手机号（输姓名或手机尾号都能自动识别会员）</label>
+              <label>选择会员（积分 / 余额抵扣；留空 = 散客。输姓名 / 手机号 / 尾号自动识别）</label>
               <div class="row" style="gap:6px;margin:0">
-                <input id="cartName" autocomplete="off" placeholder="姓名，如：张三"
+                <input id="cartSearch" autocomplete="off" placeholder="姓名 / 手机号 / 尾号，如：张三 或 1380000"
                   oninput="onCartQuery()" style="flex:1;min-width:100px">
-                <input id="cartPhone" inputmode="numeric" autocomplete="off" placeholder="手机号或尾号"
-                  oninput="onCartQuery()" style="flex:1;min-width:110px">
                 <button class="ghost" id="cartCardBtn" onclick="openCardModal()"
                   style="white-space:nowrap">🎫 消费开卡</button>
               </div>
               <div id="cartPhoneTip" class="pill" style="margin-top:5px"></div>
             </div>
+            <!-- 会员真正存放在这个隐藏域（id 不变，结算/挂单/短信逻辑零改动）；界面上只剩一个搜索框 -->
+            <select id="cartMember" onchange="onMemberPicked()" class="hidden" aria-hidden="true"><option value="">散客（无会员）</option></select>
+            <input id="cartName" type="hidden">
+            <input id="cartPhone" type="hidden">
 
             <div id="cashBox">
               <div class="sum-row"><span>现金实收（仅现金支付时生效）</span>
@@ -961,7 +958,8 @@ exports.main_handler = async (event) => {
     <p class="cfg-help">勾选要清空的模块，输入账号密码授权后点「确认清空」：</p>
     <div class="switch-row"><input type="checkbox" id="cdProducts" checked> 清空商品（含库存 / 低库存预警 / 盘点 / 入库记录）</div>
     <div class="switch-row"><input type="checkbox" id="cdOrders" checked> 清空订单（含交班 / 报表统计）</div>
-    <p class="cfg-help" style="margin:10px 0 0">🔒 会员<b>始终保留</b> —— 这里没有清空会员的选项，会员数据不会被清掉。</p>
+    <div class="switch-row"><input type="checkbox" id="cdMembers"> 清空会员（含积分 / 余额 / 等级）</div>
+    <p class="cfg-help" style="margin:10px 0 0">⚠️ 会员<b>默认不勾</b>，勾上才会清空；清空后无法恢复，请先做好备份。</p>
     <hr style="border:none;border-top:1px solid var(--line);margin:12px 0">
     <div class="field"><label>账号密码（授权清空）</label>
       <input id="cdPass" type="password" placeholder="请输入登录密码" onkeydown="if(event.key==='Enter')doClearData()">
@@ -1213,7 +1211,7 @@ function changeQty(pid,d){
   renderCart();
 }
 function removeFromCart(pid){cart=cart.filter(x=>x.pid!==pid);renderCart();}
-function clearCart(){cart=[];document.getElementById('orderDiscount').value='';document.getElementById('cartMember').value='';document.getElementById('cartPhone').value='';document.getElementById('cartPhoneTip').textContent='';const cr=document.getElementById('cashReceived');cr.value='';delete cr.dataset.manual;renderCart();}
+function clearCart(){cart=[];document.getElementById('orderDiscount').value='';document.getElementById('cartMember').value='';document.getElementById('cartSearch').value='';document.getElementById('cartName').value='';document.getElementById('cartPhone').value='';document.getElementById('cartPhoneTip').textContent='';const cr=document.getElementById('cashReceived');cr.value='';delete cr.dataset.manual;renderCart();}
 function cartSubtotal(){return cart.reduce((s,c)=>s+c.price*c.qty,0);}
 function cartQty(){return cart.reduce((s,c)=>s+c.qty,0);}
 function promo(){return S.shop.promo||DEF_S.shop.promo;}
@@ -1305,7 +1303,9 @@ function calcChange(){
 }
 function fillMemberSelect(){
   const sel=document.getElementById('cartMember');
+  const keep=sel.value||'';   // 重建 options 会丢掉已选会员（取单 / 开卡回填后就被清掉），这里补回
   sel.innerHTML='<option value="">散客（无会员）</option>'+S.members.map(m=>`<option value="${m.id}">${m.name}（积分${m.points}｜余额${money(m.balance)}）</option>`).join('');
+  if(keep&&(S.members||[]).some(m=>m.id===keep))sel.value=keep;
 }
 
 /* ============ 支付方式（收银台） ============ */
@@ -2483,12 +2483,14 @@ function takeHold(id){
   if(cart.length&&!confirm('当前购物车有商品，将被挂单内容替换，是否继续？'))return;
   cart=JSON.parse(JSON.stringify(h.items));
   S.holds=S.holds.filter(x=>x.id!==id);save();
-  document.getElementById('cartPhone').value=h.phone||'';
   document.getElementById('orderDiscount').value=h.discount||'';
   const crh=document.getElementById('cashReceived');crh.value='';delete crh.dataset.manual;
-  fillMemberSelect();
-  if(h.phone)onCartPhone();
+  document.getElementById('cartPhone').value=h.phone||'';
   document.getElementById('cartMember').value=h.memberId||'';
+  const _hm=S.members.find(x=>x.id===(h.memberId||''));
+  document.getElementById('cartSearch').value=_hm?memberDisplay(_hm):(h.phone||'');
+  fillMemberSelect();
+  onCartQuery();
   closeModal('holdsModal');renderCart();updateHoldBadge();
   switchTab('pos');toast('已取单：'+h.note);
 }
@@ -2508,43 +2510,59 @@ function memberMatch(q){
   return ms.filter(m=>(m.name||'').toLowerCase().includes(q)||(m.no||'').toLowerCase().includes(q));
 }
 function setMemberTip(html){document.getElementById('cartPhoneTip').innerHTML=html||'';}
-/* 下拉选中会员 → 回填姓名/手机号，并提示会员信息 */
+/* 下拉选中会员 → 回填姓名/手机号，并提示会员信息（cartMember 已是隐藏域，只存选中 id） */
 function onMemberPicked(){
   const sel=document.getElementById('cartMember');
   const m=S.members.find(x=>x.id===sel.value);
   document.getElementById('cartName').value=m?(m.name||''):'';
   document.getElementById('cartPhone').value=m?(m.phone||''):'';
-  if(m)setMemberTip('✅ 已选会员 <b>'+m.name+'</b>（'+(m.no||'—')+' · 尾号'+(m.phone||'').slice(-4)+'）· 积分 '+m.points+' · 余额 '+money(m.balance));
+  if(m)setMemberTip('✅ 已选会员 <b>'+escapeHtml(m.name||'—')+'</b>（'+(m.no||'—')+' · 尾号'+(m.phone||'').slice(-4)+'）· 积分 '+m.points+' · 余额 '+money(m.balance));
   else setMemberTip('');
   renderCart();
 }
-/* 收银台会员识别统一入口：姓名 / 手机号 / 手机尾号均可 */
+/* 会员在搜索框里的展示串：回填用；onCartQuery 靠它认出「已是当前选中会员」 */
+function memberDisplay(m){return m?((m.name||'')+(m.phone?(' · '+String(m.phone).slice(-4)):'')):'';}
+/* 点提示里的候选 / 程序回填 → 选中某个会员 */
+function pickMemberById(id){
+  document.getElementById('cartMember').value=id||'';
+  const m=S.members.find(x=>x.id===id);
+  document.getElementById('cartName').value=m?(m.name||''):'';
+  document.getElementById('cartPhone').value=m?(m.phone||''):'';
+  document.getElementById('cartSearch').value=m?memberDisplay(m):'';
+  onMemberPicked();
+}
+/* 收银台会员识别统一入口：只有一个搜索框，姓名 / 手机号 / 尾号均可 */
 function onCartQuery(){
-  const nameEl=document.getElementById('cartName'),phEl=document.getElementById('cartPhone');
-  const ph=(phEl.value||'').replace(/\D/g,'');phEl.value=ph;
-  const nm=(nameEl.value||'').trim();
+  const qEl=document.getElementById('cartSearch');
+  const nmEl=document.getElementById('cartName'),phEl=document.getElementById('cartPhone');
   const sel=document.getElementById('cartMember');
-  if(!nm&&!ph){setMemberTip('');return;}
-  let hits;
-  if(nm&&ph)hits=memberMatch(nm).filter(m=>memberMatch(ph).includes(m)); /* 两者都填 → 取交集 */
-  else hits=memberMatch(nm||ph);
-  if(hits.length===1){
-    const m=hits[0];
-    if(!nm)nameEl.value=m.name||'';
-    if(!ph)phEl.value=m.phone||'';
-    sel.value=m.id;
-    setMemberTip('✅ 已识别会员 <b>'+m.name+'</b>（'+(m.no||'—')+' · 尾号'+(m.phone||'').slice(-4)+'）· 积分 '+m.points+' · 余额 '+money(m.balance));
+  const q=(qEl.value||'').trim();
+  if(!q){sel.value='';nmEl.value='';phEl.value='';setMemberTip('');renderCart();return;}
+  /* 搜索框里显示的正是当前已选会员（取单 / 开卡回填）→ 别当新查询重新识别 */
+  const cur=S.members.find(x=>x.id===sel.value);
+  if(cur&&q===memberDisplay(cur)){
+    setMemberTip('✅ 已选会员 <b>'+escapeHtml(cur.name||'—')+'</b>（'+(cur.no||'—')+' · 尾号'+(cur.phone||'').slice(-4)+'）· 积分 '+cur.points+' · 余额 '+money(cur.balance));
     renderCart();return;
   }
-  sel.value='';
+  const hits=memberMatch(q);
+  if(hits.length===1){
+    const m=hits[0];
+    sel.value=m.id;nmEl.value=m.name||'';phEl.value=m.phone||'';
+    qEl.value=memberDisplay(m);
+    setMemberTip('✅ 已识别会员 <b>'+escapeHtml(m.name||'—')+'</b>（'+(m.no||'—')+' · 尾号'+(m.phone||'').slice(-4)+'）· 积分 '+m.points+' · 余额 '+money(m.balance));
+    renderCart();return;
+  }
+  sel.value='';nmEl.value='';
+  const onlyNum=(q.replace(/[\d\s\-]/g,'')==='');
+  phEl.value=onlyNum?q.replace(/\D/g,''):'';
   if(hits.length>1){
-    setMemberTip('🔍 匹配到 '+hits.length+' 位会员：'
-      +hits.slice(0,4).map(m=>(m.name||'—')+'（尾号'+(m.phone||'').slice(-4)+'）').join('、')
-      +(hits.length>4?' …':'')+'，请在上方「选择会员」下拉里选');
-  }else if(ph){
-    setMemberTip(ph.length>=11?'⚠️ 该手机号尚未开卡，点右侧「🎫 消费开卡」现场发卡':'继续输入更多手机尾号…');
+    setMemberTip('🔍 匹配到 '+hits.length+' 位，点选：'
+      +hits.slice(0,5).map(m=>'<button class="ghost" style="padding:2px 8px;margin:2px" onclick="pickMemberById(\''+m.id+'\')">'+escapeHtml(m.name||'—')+'·尾号'+(m.phone||'').slice(-4)+'</button>').join('')
+      +(hits.length>5?' …':''));
+  }else if(onlyNum&&phEl.value){
+    setMemberTip(phEl.value.length>=11?'⚠️ 该手机号尚未开卡，点右侧「🎫 消费开卡」现场发卡':'继续输入更多手机尾号…');
   }else{
-    setMemberTip('没有找到姓名含「'+nm+'」的会员');
+    setMemberTip('没有找到匹配「'+escapeHtml(q)+'」的会员');
   }
   renderCart();
 }
@@ -2599,9 +2617,10 @@ async function doOpenCard(){
   S.members.push(m);save();
   if(document.getElementById('cBindCart').checked){
     document.getElementById('cartPhone').value=phone;
-    fillMemberSelect();
     document.getElementById('cartMember').value=m.id;
-    onCartPhone();renderCart();
+    document.getElementById('cartSearch').value=memberDisplay(m);
+    fillMemberSelect();
+    onCartQuery();renderCart();
   }
   closeModal('cardModal');renderMembers();fillMemberSelect();updateSmsBadge();
   toast('🎫 开卡成功 '+m.no+' · '+m.name);
@@ -2909,7 +2928,7 @@ function bkCSV(rows){
   }).join(',')).join('\r\n');
 }
 function bkPack(){
-  return {app:'通用收银台',version:'1.5.6',exportedAt:new Date().toISOString(),
+  return {app:'通用收银台',version:'1.5.7',exportedAt:new Date().toISOString(),
     shop:S.shop,products:S.products,members:S.members,orders:S.orders,
     shifts:S.shifts,stockLog:S.stockLog,smsLog:S.smsLog,holds:S.holds,
     seq:S.seq,cardSeq:S.cardSeq};
@@ -2940,7 +2959,7 @@ function expXLSX(){
     ['订单数',S.orders.length],
     ['库存流水',(S.stockLog||[]).length],
     ['短信记录',(S.smsLog||[]).length],
-    ['软件版本','通用收银台 1.5.6']
+    ['软件版本','通用收银台 1.5.7']
   ]});
   downloadBlob(bkBuildXLSX(sheets),'通用收银台数据_'+todayStr()+'.xlsx');
   toast('已导出 Excel（'+sheets.length+' 个工作表）');
@@ -4020,13 +4039,14 @@ function importAll(input){
   if(!f)return;
   openBackup();importAnyFiles(input.files);input.value='';
 }
-/* 清空数据：按模块分别清空（商品 / 订单），会员始终保留；需账号密码授权。
+/* 清空数据：按模块分别清空（商品 / 订单 / 会员），会员默认不勾；需账号密码授权。
    修复「清空不生效 / 删不掉」：之前只把本机数组置空，没在云端登记删除，
-   4 秒自动同步 GET 会把云端旧数据拉回。现在清商品走墓碑 markDeleted、清订单推
+   4 秒自动同步 GET 会把云端旧数据拉回。现在清商品 / 会员走墓碑 markDeleted、清订单推
    deleted:true 上云，两端同步删除，GET 不会再拉回。 */
 function openClearData(){
-  const p=document.getElementById('cdProducts'),o=document.getElementById('cdOrders'),pw=document.getElementById('cdPass');
-  if(p)p.checked=true; if(o)o.checked=true; if(pw)pw.value='';
+  const p=document.getElementById('cdProducts'),o=document.getElementById('cdOrders'),
+        m=document.getElementById('cdMembers'),pw=document.getElementById('cdPass');
+  if(p)p.checked=true; if(o)o.checked=true; if(m)m.checked=false; if(pw)pw.value='';
   openModal('clearDataModal');
 }
 async function doClearData(){
@@ -4044,7 +4064,8 @@ async function doClearData(){
   }
   const cp=!!(document.getElementById('cdProducts')&&document.getElementById('cdProducts').checked);
   const co=!!(document.getElementById('cdOrders')&&document.getElementById('cdOrders').checked);
-  if(!cp&&!co){toast('请至少选择一项要清空的数据');return;}
+  const cm=!!(document.getElementById('cdMembers')&&document.getElementById('cdMembers').checked);
+  if(!cp&&!co&&!cm){toast('请至少选择一项要清空的数据');return;}
   let cloudOk=true;
   if(cp){
     (S.products||[]).forEach(p=>markDeleted('products',p));
@@ -4059,12 +4080,21 @@ async function doClearData(){
     if(ids.length)cloudOk=await pushOrderDeletes(ids);
     S.orders=[];
   }
-  /* 会员：始终保留，不处理 */
+  if(cm){
+    /* 会员跟商品一样走整店通道 + 墓碑：本机先登记，同步拉取不会再拉回 */
+    (S.members||[]).forEach(m=>markDeleted('members',m));
+    S.members=[];
+    try{const cs=document.getElementById('cartMember');if(cs)cs.value='';
+        const cq=document.getElementById('cartSearch');if(cq)cq.value='';
+        const cn=document.getElementById('cartName');if(cn)cn.value='';
+        const cp2=document.getElementById('cartPhone');if(cp2)cp2.value='';}catch(e){}
+  }
   save();
   try{await syncNow({silent:true});}catch(e){}
   initUI();
-  toast(cloudOk?'已清空所选数据（会员已保留）'
-               :'已清空所选数据；云端订单删除没成功，但本机不会再恢复');
+  const done=[];if(cp)done.push('商品');if(co)done.push('订单');if(cm)done.push('会员');
+  toast((cloudOk?'已清空：'+done.join('、')
+               :'已清空：'+done.join('、')+'；云端订单删除没成功，但本机不会再恢复'));
   closeModal('clearDataModal');
 }
 /* 把订单删除推到云端（deleted:true），避免同步把旧订单拉回 */
