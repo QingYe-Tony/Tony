@@ -306,6 +306,50 @@
     .wb-quick button{flex-direction:row;justify-content:center;gap:12px;padding:18px 10px;font-size:16px}
     .wb-tile{font-size:13px}
   }
+
+  /* ============ v1.6.1 手机端完善 ============ */
+  /* 顶栏按钮：蓝底上不能发灰，对比度提上来 */
+  header .ghost{background:rgba(255,255,255,.20);border-color:rgba(255,255,255,.62);color:#fff;font-weight:600}
+  /* 日期选择：带中文标签的小胶囊，取代「空白大方框」 */
+  .rr-box{display:flex;align-items:center;gap:6px;background:#fff;border:1px solid var(--line);
+    border-radius:10px;padding:3px 10px;min-height:40px}
+  .rr-box>span{font-size:12px;color:var(--muted);font-weight:600;white-space:nowrap}
+  .rr-box input[type=date]{border:none;background:transparent;padding:4px 0;min-width:126px}
+  .rr-box input[type=date]:focus{outline:none}
+  /* 文件选择：藏掉原生的英文 Choose File，改成中文按钮 + 文件名 */
+  .file-pick{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  .file-pick .fp-name{font-size:12px;color:var(--muted);max-width:200px;overflow:hidden;
+    text-overflow:ellipsis;white-space:nowrap}
+  @media (max-width:768px){
+    /* —— 宽表格自动变卡片（列头由 JS 回填到 data-label）—— */
+    table.mob-card{display:block;width:100%}
+    table.mob-card thead{display:none}
+    table.mob-card tbody{display:block}
+    table.mob-card tr{display:block;background:#fff;border-radius:12px;padding:10px 12px;
+      margin-bottom:10px;box-shadow:0 2px 10px rgba(16,24,40,.07)}
+    table.mob-card tr:hover td{background:transparent}
+    table.mob-card td{display:flex;align-items:center;justify-content:space-between;gap:12px;
+      padding:5px 0;border:none;font-size:13.5px;text-align:right}
+    table.mob-card td::before{content:attr(data-label);color:var(--muted);font-weight:600;
+      flex:none;text-align:left;font-size:12.5px}
+    table.mob-card td:not([data-label])::before{content:none}
+    table.mob-card td:first-child{display:block;font-weight:700;color:#0f172a;font-size:14.5px;
+      border-bottom:1px solid var(--line);padding:0 0 8px;margin-bottom:4px;text-align:left}
+    table.mob-card td:first-child::before{display:none}
+    table.mob-card tr.mob-empty{background:transparent;box-shadow:none;padding:0}
+    table.mob-card tr.mob-empty td{display:block;text-align:center;padding:30px 10px;color:var(--muted)}
+    table.mob-card tr.mob-empty td::before{display:none}
+    /* 表格外层卡片的壳去掉，避免「卡片套卡片」 */
+    .mob-plain{background:transparent!important;box-shadow:none!important;padding:0!important;border:none!important}
+    /* 统计周期 / 日期筛选：两个日期框各占一半 */
+    .rr-box{flex:1;min-width:0}
+    .rr-box input[type=date]{min-width:0;width:100%;font-size:14px}
+    .rep-range .rr-sep{display:none}
+    /* 报表页顶部渐变块已含这 4 个指标，手机端隐藏下面重复的统计卡 */
+    #reportBody>.stats{display:none}
+    /* 弹窗内的表格也让卡片铺满 */
+    .modal table.mob-card td{font-size:13px}
+  }
 </style>
 </head>
 <body>
@@ -477,8 +521,8 @@
 
     <!-- 订单 -->
     <section id="tab-orders" class="hidden">
-      <div class="toolbar">
-        <input id="orderDate" type="date" onchange="renderOrders()">
+      <div class="toolbar rep-range">
+        <div class="rr-box"><span>日期</span><input id="orderDate" type="date" onchange="renderOrders()"></div>
         <button class="ghost" onclick="document.getElementById('orderDate').value='';renderOrders()">全部日期</button>
         <div class="spacer"></div>
         <span class="pill" id="orderCount"></span>
@@ -504,11 +548,11 @@
           <div><div class="m" id="rhToday">¥0.00</div><div class="l">今日营业额</div></div>
         </div>
       </div>
-      <div class="toolbar">
-        <span>统计周期：</span>
-        <input id="repFrom" type="date" onchange="renderReports()">
-        <span>至</span>
-        <input id="repTo" type="date" onchange="renderReports()">
+      <div class="toolbar rep-range">
+        <span style="font-weight:700;color:#0f172a">统计周期</span>
+        <div class="rr-box"><span>开始</span><input id="repFrom" type="date" onchange="renderReports()"></div>
+        <span class="rr-sep" style="color:var(--muted)">~</span>
+        <div class="rr-box"><span>结束</span><input id="repTo" type="date" onchange="renderReports()"></div>
         <button class="ghost" onclick="clearRepDates()">清空</button>
       </div>
       <div class="card" style="padding:14px;margin-bottom:14px">
@@ -557,7 +601,11 @@
         </div>
         <div class="field"><label>店铺名称</label><input id="setName" oninput="saveSettings()"></div>
         <div class="field"><label>店铺Logo（显示在收银台与小票）</label>
-          <input id="setLogo" type="file" accept="image/*" onchange="setLogoFromFile(this)">
+          <div class="file-pick">
+            <button class="ghost" onclick="document.getElementById('setLogo').click()">📷 选择图片</button>
+            <span class="fp-name" id="logoFileName">未选择图片</span>
+          </div>
+          <input id="setLogo" type="file" accept="image/*" class="hidden" onchange="setLogoFromFile(this)">
           <div id="logoPreview" style="margin-top:6px"></div>
         </div>
         <div class="row">
@@ -1256,6 +1304,34 @@ function hdrScan(){
   switchTab('pos');
   const b=document.getElementById('barcodeInput');
   if(b){try{b.focus();}catch(e){}toast('请用扫码枪扫描，或手动输入条码后回车');}
+}
+/* —— 手机端：宽表格自动变卡片（列头回填到 td[data-label]，由 CSS 渲染成「左标签右值」）—— */
+function decorateMobileTables(root){
+  const scope=(root&&root.querySelectorAll)?root:document;
+  scope.querySelectorAll('table').forEach(tb=>{
+    const ths=[...tb.querySelectorAll('thead th')].map(th=>(th.textContent||'').trim());
+    if(ths.length<4)return;                 /* 3 列以内的窄表不用卡片化，横着放得下 */
+    tb.classList.add('mob-card');
+    /* 外层卡片如果只装了这张表（或再加个小标题），壳去掉，避免「卡片套卡片」 */
+    const host=tb.closest('.card');
+    if(host&&[...host.children].filter(el=>el!==tb&&el.tagName!=='H3').length===0)host.classList.add('mob-plain');
+    [...tb.querySelectorAll('tbody tr')].forEach(tr=>{
+      if(tr.dataset.mob==='1')return;
+      const cells=[...tr.cells];
+      if(cells.length===1&&(cells[0].colSpan>1||cells[0].classList.contains('empty'))){
+        tr.classList.add('mob-empty');tr.dataset.mob='1';return;
+      }
+      cells.forEach((td,i)=>{if(ths[i])td.setAttribute('data-label',ths[i]);});
+      tr.dataset.mob='1';
+    });
+  });
+}
+function startMobileTableWatch(){
+  decorateMobileTables(document);
+  if(!window.MutationObserver)return;
+  let t=null;
+  new MutationObserver(()=>{clearTimeout(t);t=setTimeout(()=>{try{decorateMobileTables(document);}catch(e){}},60);})
+    .observe(document.body,{childList:true,subtree:true});
 }
 function loadSettingsForm(){
   document.getElementById('setName').value=S.shop.name;
@@ -2947,9 +3023,12 @@ function renderHeader(){
 function renderLogoPreview(){
   const pv=document.getElementById('logoPreview');
   if(pv)pv.innerHTML=S.shop.logo?'<img src="'+S.shop.logo+'" style="width:48px;height:48px;border-radius:8px;object-fit:cover;border:1px solid var(--line)">':'';
+  const nm=document.getElementById('logoFileName');
+  if(nm&&!nm.dataset.picked)nm.textContent=S.shop.logo?'已设置（点击可更换）':'未选择图片';
 }
 function setLogoFromFile(input){
   const f=input.files[0];if(!f)return;
+  const nm=document.getElementById('logoFileName');if(nm){nm.dataset.picked='1';nm.textContent=f.name;}
   const r=new FileReader();
   r.onload=()=>{S.shop.logo=r.result;renderHeader();renderLogoPreview();save();toast('Logo 已更新');};
   r.readAsDataURL(f);
@@ -3110,7 +3189,7 @@ function bkCSV(rows){
   }).join(',')).join('\r\n');
 }
 function bkPack(){
-  return {app:'通用收银台',version:'1.6.0',exportedAt:new Date().toISOString(),
+  return {app:'通用收银台',version:'1.6.1',exportedAt:new Date().toISOString(),
     shop:S.shop,products:S.products,members:S.members,orders:S.orders,
     shifts:S.shifts,stockLog:S.stockLog,smsLog:S.smsLog,holds:S.holds,
     seq:S.seq,cardSeq:S.cardSeq};
@@ -3141,7 +3220,7 @@ function expXLSX(){
     ['订单数',S.orders.length],
     ['库存流水',(S.stockLog||[]).length],
     ['短信记录',(S.smsLog||[]).length],
-    ['软件版本','通用收银台 1.6.0']
+    ['软件版本','通用收银台 1.6.1']
   ]});
   downloadBlob(bkBuildXLSX(sheets),'通用收银台数据_'+todayStr()+'.xlsx');
   toast('已导出 Excel（'+sheets.length+' 个工作表）');
@@ -4441,6 +4520,7 @@ function initUI(){
     });
   }
   renderProducts();renderCart();fillMemberSelect();updateHoldBadge();applyDiscountPermission();
+  startMobileTableWatch();
   if(requireLogin())openLoginGate();
 }
 /* ==================================================================
