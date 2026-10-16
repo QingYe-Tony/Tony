@@ -296,7 +296,10 @@
     #bottomNav button{color:#94a3b8}
     #bottomNav button.active{color:var(--brand);background:transparent}
     #bottomNav button span{font-size:21px;line-height:1}
-    main{padding:12px}
+    /* 注意：这里必须把 padding-bottom 一起写上。
+       `padding:12px` 是简写，会把上面媒体查询里给固定底栏留的 150px 一起重置成 12px，
+       结果页面滚到底时最后一块内容会被底栏压住（怎么上滑都露不出来）。 */
+    main{padding:12px;padding-bottom:calc(150px + env(safe-area-inset-bottom))}
     .wb-tile{font-size:11.5px}
   }
   @media (max-width:360px){ .wb-tile{font-size:11px} .wb-tile .ic{width:40px;height:40px;font-size:19px} }
@@ -1275,6 +1278,9 @@ function switchTab(t){
   if(t==='reports'){renderReports();renderShift();}
   if(t==='members'){renderMembers();updateSmsBadge();}
   if(t==='settings'){loadSettingsForm();renderSyncBox();}
+  /* 真正的滚动容器是 <main>（.wrap 是 100% 高的 flex 列，main 有 flex:1;overflow:auto），
+     所以必须滚 main；只滚 documentElement 是不生效的。 */
+  const _m=document.querySelector('main');if(_m)_m.scrollTop=0;
   const _sc=document.scrollingElement||document.documentElement;if(_sc)_sc.scrollTop=0;
 }
 /* —— 工作台首页 —— */
@@ -3189,7 +3195,7 @@ function bkCSV(rows){
   }).join(',')).join('\r\n');
 }
 function bkPack(){
-  return {app:'通用收银台',version:'1.6.1',exportedAt:new Date().toISOString(),
+  return {app:'通用收银台',version:'1.6.2',exportedAt:new Date().toISOString(),
     shop:S.shop,products:S.products,members:S.members,orders:S.orders,
     shifts:S.shifts,stockLog:S.stockLog,smsLog:S.smsLog,holds:S.holds,
     seq:S.seq,cardSeq:S.cardSeq};
@@ -3220,7 +3226,7 @@ function expXLSX(){
     ['订单数',S.orders.length],
     ['库存流水',(S.stockLog||[]).length],
     ['短信记录',(S.smsLog||[]).length],
-    ['软件版本','通用收银台 1.6.1']
+    ['软件版本','通用收银台 1.6.2']
   ]});
   downloadBlob(bkBuildXLSX(sheets),'通用收银台数据_'+todayStr()+'.xlsx');
   toast('已导出 Excel（'+sheets.length+' 个工作表）');
