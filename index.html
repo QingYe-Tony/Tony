@@ -265,19 +265,6 @@
     .prod-tools .ic-svg{margin-right:0}
     .prod-tools>.spacer{display:none}
     .prod-tools>input#prodFilter{grid-column:1/-1;max-width:none!important;width:100%}
-    /* 安装提示横幅（v1.6.4）
-       原来是 position:fixed;top:0 的深色大条 —— 它直接盖住顶栏第一行（店名/查找/扫一扫），
-       用户看到的是「黑块 + 青绿条」两条横幅叠在一起，非常不规整。
-       现在改成 header 之前的页内细提示：不吃 safe-area、不遮挡任何内容、浅色低调。
-       注意选择器写成 body #installHint：下面 v1.6.0 段还有一条全局 #installHint{display:none}，
-       同特异性但排在后面，会把这里的 display:flex 冲掉（提示条直接不显示）。 */
-    body #installHint{display:flex;position:static;gap:8px;align-items:center;
-      padding:8px 12px;background:#e8f8f4;color:#0c6a55;font-size:12px;
-      border-bottom:1px solid #d3ece5}
-    #installHint .ih-text{flex:1;line-height:1.45}
-    #installHint .primary{padding:6px 12px;font-size:12.5px}
-    #installHint .ghost{color:#0c6a55;border-color:#a8dcd0;padding:4px 9px;font-size:12px;
-      background:transparent;line-height:1}
   }
   @media (min-width:769px){ .cart-close{display:none} }
 
@@ -298,8 +285,6 @@
   .hdr-search{display:none}
   /* 头部内的两个大动作只在手机端出现（桌面端用 .wb-quick 那两张卡） */
   .hdr-quick{display:none}
-  /* 安装提示只在手机端出现（桌面端用浏览器的安装入口/应用商店包） */
-  #installHint{display:none}
   /* 工作台首页 */
   .wb-quick{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:0 0 14px}
   .wb-quick button{display:flex;flex-direction:column;align-items:center;gap:9px;padding:22px 8px;
@@ -482,12 +467,6 @@
 </head>
 <body class="on-dash">
 <div class="wrap">
-  <!-- 安装为 App 提示：页内细提示，放在 header 之前（不再是 fixed 悬浮条，不遮挡顶栏） -->
-  <div id="installHint" class="hidden">
-    <div class="ih-text" id="ihText"></div>
-    <button class="primary" id="ihBtn" onclick="doInstall()">安装</button>
-    <button class="ghost" onclick="dismissHint()" aria-label="关闭">×</button>
-  </div>
   <header>
     <div class="logo" id="hdrLogo">收</div>
     <div>
@@ -3338,7 +3317,7 @@ function bkCSV(rows){
   }).join(',')).join('\r\n');
 }
 function bkPack(){
-  return {app:'通用收银台',version:'1.6.4',exportedAt:new Date().toISOString(),
+  return {app:'通用收银台',version:'1.6.5',exportedAt:new Date().toISOString(),
     shop:S.shop,products:S.products,members:S.members,orders:S.orders,
     shifts:S.shifts,stockLog:S.stockLog,smsLog:S.smsLog,holds:S.holds,
     seq:S.seq,cardSeq:S.cardSeq};
@@ -3369,7 +3348,7 @@ function expXLSX(){
     ['订单数',S.orders.length],
     ['库存流水',(S.stockLog||[]).length],
     ['短信记录',(S.smsLog||[]).length],
-    ['软件版本','通用收银台 1.6.4']
+    ['软件版本','通用收银台 1.6.5']
   ]});
   downloadBlob(bkBuildXLSX(sheets),'通用收银台数据_'+todayStr()+'.xlsx');
   toast('已导出 Excel（'+sheets.length+' 个工作表）');
@@ -4630,29 +4609,11 @@ function updateMobileCartBar(){
   if(t)t.textContent='应付 '+money(pay);
   if(s)s.textContent=cart.length+' 种 / '+cartQty()+' 件';
 }
-/* 安装为 App 提示 */
-let _deferredPrompt=null;
-window.addEventListener('beforeinstallprompt',e=>{
-  e.preventDefault();_deferredPrompt=e;
-  if(!localStorage.getItem('pos_ih_dismiss'))showInstallHint(true);
-});
-window.addEventListener('appinstalled',()=>dismissHint());
-function isIOS(){return /iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.userAgent.includes('Mac')&&'ontouchend'in document&&!/Chrome/.test(navigator.userAgent));}
-function showInstallHint(canInstall){
-  const hint=document.getElementById('installHint');if(!hint)return;
-  if(canInstall){document.getElementById('ihText').textContent='可安装为 App，离线也能用';document.getElementById('ihBtn').classList.remove('hidden');}
-  else if(isIOS()){document.getElementById('ihText').textContent='点「分享」→「添加到主屏幕」可当 App 用';document.getElementById('ihBtn').classList.add('hidden');}
-  else return;
-  hint.classList.remove('hidden');
-  /* 只提示一次：显示过就记账，避免每次打开都顶一条横幅 */
-  try{localStorage.setItem('pos_ih_seen','1');}catch(e){}
-}
-function doInstall(){if(_deferredPrompt){_deferredPrompt.prompt();_deferredPrompt.userChoice.then(()=>{_deferredPrompt=null;dismissHint();});}}
-function dismissHint(){const h=document.getElementById('installHint');if(h)h.classList.add('hidden');try{localStorage.setItem('pos_ih_dismiss','1');localStorage.setItem('pos_ih_seen','1');}catch(e){}}
-/* iOS 无 beforeinstallprompt，首次进入给出手动提示 */
-if(isIOS()&&!window.matchMedia('(display-mode: standalone)').matches&&!localStorage.getItem('pos_ih_dismiss')&&!localStorage.getItem('pos_ih_seen')){
-  showInstallHint(false);
-}
+/* v1.6.5：彻底移除「安装为 App」提示。
+   这套提示原本是给手机浏览器准备（Safari 没有 beforeinstallprompt，只能引导用户
+   「分享 → 添加到主屏幕」）。但装成 App 之后（APK / IPA / 桌面包 / 已添加到主屏的 PWA）
+   它照样会顶在页头，用户原话：「这是 app 不是浏览器，不需要顶栏分享安装」。
+   宁可少一个引导，也不要让 App 看起来像网页。 */
 
 /* ============ 初始化 ============ */
 function initUI(){
