@@ -300,13 +300,17 @@ const T = (p, ms, name) => Promise.race([Promise.resolve(p),
     typeof w.renderDash === 'function' && typeof w.quickStartPos === 'function'
     && typeof w.hdrQuickSearch === 'function' && typeof w.hdrScan === 'function');
 
-  // H6 工作台功能图标网格 = 8 个
+  // H6 工作台功能图标网格 = 8 个（v1.6.3：门店管理由 2×2 大卡改为紧凑列表行）
   let h6 = JSON.parse(await ev(`JSON.stringify({
     tiles: document.querySelectorAll('#tab-dash .wb-tile').length,
     quick: document.querySelectorAll('#tab-dash .wb-quick button').length,
-    cards: document.querySelectorAll('#tab-dash .wb-card').length})`));
-  astep('H6 工作台：2 个快捷大按钮 + 8 个功能图标 + 4 张门店管理卡片',
-    h6.tiles === 8 && h6.quick === 2 && h6.cards === 4, JSON.stringify(h6));
+    hdrQuick: document.querySelectorAll('header .hdr-quick button').length,
+    rows: document.querySelectorAll('#tab-dash .wb-list .wl').length,
+    stats: document.querySelectorAll('#tab-dash .wb-stats>div').length})`));
+  astep('H6 工作台：8 个功能图标 + 4 条门店管理列表行 + 3 列今日概览',
+    h6.tiles === 8 && h6.rows === 4 && h6.stats === 3, JSON.stringify(h6));
+  astep('H6 两个大动作两套位置都在（头部内=手机端 / 卡片内=桌面端）',
+    h6.quick === 2 && h6.hdrQuick === 2, JSON.stringify(h6));
 
   // H7 今日概览数据
   await ev(`S.members=[{id:'x1'},{id:'x2'},{id:'x3'}];
