@@ -1,4 +1,4 @@
-const CACHE = 'pos-cache-v21';
+const CACHE = 'pos-cache-v22';
 const ASSETS = ['./', './index.html', './manifest.webmanifest', './sw.js', './icon.svg', './icon-192.png', './icon-512.png', './icon-maskable-512.png', './apple-touch-icon.png', './server.py'];
 
 self.addEventListener('install', (e) => {

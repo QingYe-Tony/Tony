@@ -100,6 +100,24 @@
   .toast.show{opacity:1}
   .toolbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px}
   .toolbar .spacer{flex:1}
+  /* 内嵌线性图标：界面里所有动作图标统一这一套（emoji 在不同系统长得完全不一样） */
+  .ic-svg{width:15px;height:15px;display:inline-block;vertical-align:-3px;margin-right:4px;
+    stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+  .wb-quick .ic svg{width:26px;height:26px;margin:0;stroke:currentColor;fill:none;stroke-width:1.7;
+    stroke-linecap:round;stroke-linejoin:round}
+  .wb-list .ico svg{width:16px;height:16px;margin:0;stroke:currentColor;fill:none;stroke-width:1.7;
+    stroke-linecap:round;stroke-linejoin:round}
+  /* 工具栏按钮：图标用内嵌 SVG（emoji 在不同系统长得完全不一样，显得不规整） */
+  .toolbar .tb-act{display:inline-flex;align-items:center;gap:6px}
+  .toolbar .tb-act svg{width:16px;height:16px;flex:none;stroke:currentColor;fill:none;
+    stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+  .toolbar .tb-act .ic-svg{margin-right:0}
+  /* 空列表：图标 + 主文案 + 次文案，别让一句灰字孤零零飘在页面中间 */
+  .empty-box{display:flex;flex-direction:column;align-items:center;gap:7px;padding:22px 10px 26px}
+  .empty-box .eb-ic{width:36px;height:36px;stroke:#c6cfd8;fill:none;stroke-width:1.5;
+    stroke-linecap:round;stroke-linejoin:round}
+  .empty-box .eb-t{font-size:13.5px;font-weight:700;color:#6b7684}
+  .empty-box .eb-d{font-size:12.5px;color:var(--muted)}
   .empty{padding:40px;text-align:center;color:var(--muted)}
   /* receipt print */
   #receipt{display:none}
@@ -222,12 +240,44 @@
     input,select,textarea,button{font-size:15px}
     .toolbar{position:sticky;top:0;background:var(--bg);z-index:5;padding-top:6px}
     .toolbar input{max-width:none!important}
-    /* 安装提示横幅 */
-    #installHint{display:flex;position:fixed;left:0;right:0;top:0;z-index:70;gap:8px;align-items:center;
-      padding:calc(10px + env(safe-area-inset-top)) 12px;background:#1f2933;color:#fff;font-size:13px}
-    #installHint .ih-text{flex:1;line-height:1.4}
-    #installHint .primary{padding:8px 14px;font-size:13px}
-    #installHint .ghost{color:#fff;border-color:#fff;padding:6px 10px}
+    /* 工具栏三个动作等分一行，搜索框单独占一行（v1.6.4） */
+    .toolbar .tb-act{flex:1 1 0;min-width:0;justify-content:center;font-size:13px;
+      padding:10px 4px;gap:5px;white-space:nowrap}
+    .toolbar .tb-act svg{width:15px;height:15px}
+    .toolbar .spacer{display:none}
+    .toolbar #memFilter{flex:1 1 100%;width:100%}
+    /* 统计周期：手机上「标题 + 开始 + 结束 + 清空」挤一行会把日期框压成 mm/dd，
+       改成标题独占一行、两个日期各占一半的第二行（v1.6.4） */
+    .rep-range{padding-top:0;position:static;row-gap:8px}
+    .rep-range>span:first-child{flex:1 0 100%;font-size:13px}
+    .rep-range>.rr-box{flex:1 1 0;min-width:0}
+    .rep-range>.rr-box input[type=date]{min-width:0;width:100%;font-size:13px}
+    .rep-range>.rr-sep{display:none}
+    .rep-range>button{flex:0 0 auto;padding:9px 14px;font-size:13px}
+    /* 空列表：给点呼吸空间，别让一句灰字孤零零飘着 */
+    table.mob-card tr.mob-empty td{padding:38px 16px;font-size:13px;line-height:1.85}
+    /* 商品管理 7 个动作原来在窄屏上 3+3+1 换行，尾巴孤零零一个；
+       改成 3 列网格，「新增商品」独占一行（v1.6.4） */
+    .prod-tools{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+    .prod-tools>button{width:100%;justify-content:center;padding:9px 2px;font-size:12.5px;
+      white-space:nowrap;gap:4px}
+    .prod-tools>button.primary{grid-column:1/-1}
+    .prod-tools .ic-svg{margin-right:0}
+    .prod-tools>.spacer{display:none}
+    .prod-tools>input#prodFilter{grid-column:1/-1;max-width:none!important;width:100%}
+    /* 安装提示横幅（v1.6.4）
+       原来是 position:fixed;top:0 的深色大条 —— 它直接盖住顶栏第一行（店名/查找/扫一扫），
+       用户看到的是「黑块 + 青绿条」两条横幅叠在一起，非常不规整。
+       现在改成 header 之前的页内细提示：不吃 safe-area、不遮挡任何内容、浅色低调。
+       注意选择器写成 body #installHint：下面 v1.6.0 段还有一条全局 #installHint{display:none}，
+       同特异性但排在后面，会把这里的 display:flex 冲掉（提示条直接不显示）。 */
+    body #installHint{display:flex;position:static;gap:8px;align-items:center;
+      padding:8px 12px;background:#e8f8f4;color:#0c6a55;font-size:12px;
+      border-bottom:1px solid #d3ece5}
+    #installHint .ih-text{flex:1;line-height:1.45}
+    #installHint .primary{padding:6px 12px;font-size:12.5px}
+    #installHint .ghost{color:#0c6a55;border-color:#a8dcd0;padding:4px 9px;font-size:12px;
+      background:transparent;line-height:1}
   }
   @media (min-width:769px){ .cart-close{display:none} }
 
@@ -248,6 +298,8 @@
   .hdr-search{display:none}
   /* 头部内的两个大动作只在手机端出现（桌面端用 .wb-quick 那两张卡） */
   .hdr-quick{display:none}
+  /* 安装提示只在手机端出现（桌面端用浏览器的安装入口/应用商店包） */
+  #installHint{display:none}
   /* 工作台首页 */
   .wb-quick{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:0 0 14px}
   .wb-quick button{display:flex;flex-direction:column;align-items:center;gap:9px;padding:22px 8px;
@@ -341,15 +393,19 @@
     .hdr-search input{height:32px;border-radius:6px;font-size:13px;padding:6px 10px}
     .hdr-search .ghost{padding:5px 9px;font-size:12.5px;border-radius:6px}
     header>.row{display:none}
-    /* 两个大动作放进绿色头部里（原版的「快速收银 / 商品收银」就在头部） */
-    .hdr-quick{display:flex;width:100%;order:4;margin-top:8px;
+    /* 两个大动作放进绿色头部里（原版的「快速收银 / 商品收银」就在头部）
+       v1.6.4：① 只在工作台显示 —— 原来会员/报表/设置页顶部也挂着这两条，
+       与页面内容无关，堆在头部像多余横幅；② 图标改成「图标 + 文字」横排，
+       不再用 34px 圆环（Safari 上圆环描边容易糊掉，只剩两行白字）。 */
+    .hdr-quick{display:flex;width:100%;order:4;margin-top:6px;
       border-top:1px solid rgba(255,255,255,.22)}
-    .hdr-quick button{flex:1;display:flex;flex-direction:column;align-items:center;gap:5px;
-      background:transparent;color:#fff;font-size:12.5px;font-weight:600;padding:9px 0 1px;border-radius:0}
+    body:not(.on-dash) header .hdr-quick{display:none}
+    .hdr-quick button{flex:1;display:flex;align-items:center;justify-content:center;gap:6px;
+      background:transparent;color:#fff;font-size:13px;font-weight:600;padding:10px 0;border-radius:0}
     .hdr-quick button+button{border-left:1px solid rgba(255,255,255,.22)}
-    .hdr-quick .qic{width:34px;height:34px;border-radius:50%;border:1.5px solid rgba(255,255,255,.92);
-      display:flex;align-items:center;justify-content:center}
-    .hdr-quick .qic svg{width:19px;height:19px;stroke:#fff;fill:none;stroke-width:1.8;
+    .hdr-quick .qic{display:flex;align-items:center;justify-content:center;
+      width:auto;height:auto;border:none;flex:none}
+    .hdr-quick .qic svg{width:17px;height:17px;stroke:#fff;fill:none;stroke-width:1.8;
       stroke-linecap:round;stroke-linejoin:round}
     .wb-quick{display:none}
     /* 白色面板：小圆角 + 细描边 + 去大阴影 */
@@ -424,8 +480,14 @@
   }
 </style>
 </head>
-<body>
+<body class="on-dash">
 <div class="wrap">
+  <!-- 安装为 App 提示：页内细提示，放在 header 之前（不再是 fixed 悬浮条，不遮挡顶栏） -->
+  <div id="installHint" class="hidden">
+    <div class="ih-text" id="ihText"></div>
+    <button class="primary" id="ihBtn" onclick="doInstall()">安装</button>
+    <button class="ghost" onclick="dismissHint()" aria-label="关闭">×</button>
+  </div>
   <header>
     <div class="logo" id="hdrLogo">收</div>
     <div>
@@ -447,7 +509,7 @@
       <button class="ghost" onclick="hdrScan()">扫一扫</button>
     </div>
     <div class="row" style="margin-left:auto;gap:6px;align-items:center;margin-top:0">
-      <button class="ghost" id="staffBtn" style="white-space:nowrap" onclick="openStaffModal()">👤 店长</button>
+      <button class="ghost" id="staffBtn" style="white-space:nowrap" onclick="openStaffModal()"><svg class="ic-svg" viewBox="0 0 24 24"><circle cx="12" cy="8" r="3.2"/><path d="M5.2 20c0-3.6 3-5.6 6.8-5.6s6.8 2 6.8 5.6"/></svg><span id="staffBtnLabel">店长</span></button>
       <button class="ghost nav-help" onclick="openModal('helpModal')">帮助</button>
     </div>
     <!-- 手机端：两个大动作放进绿色头部（与「商户收银宝」一致） -->
@@ -478,8 +540,8 @@
     <!-- 工作台（首页） -->
     <section id="tab-dash">
       <div class="wb-quick">
-        <button onclick="quickStartPos()"><span class="ic">🧾</span>快速收银</button>
-        <button onclick="switchTab('pos')"><span class="ic" style="background:linear-gradient(135deg,#f59e0b,#fbbf24)">🛒</span>商品收银</button>
+        <button onclick="quickStartPos()"><span class="ic"><svg class="ic-svg" viewBox="0 0 24 24"><path d="M7.5 5.5 12 12l4.5-6.5M12 12v7M8.6 14.4h6.8M8.6 17.4h6.8"/></svg></span>快速收银</button>
+        <button onclick="switchTab('pos')"><span class="ic" style="background:linear-gradient(135deg,#f59e0b,#fbbf24)"><svg class="ic-svg" viewBox="0 0 24 24"><path d="M3 4h2.2l2.3 10.4h10.1L20 6.6H6.1"/><circle cx="9.4" cy="19.2" r="1.35"/><circle cx="17.2" cy="19.2" r="1.35"/></svg></span>商品收银</button>
       </div>
 
       <div class="wb-panel">
@@ -497,10 +559,10 @@
 
       <div class="wb-sec">门店管理</div>
       <div class="wb-list">
-        <div class="wl" onclick="openStaffModal()"><span class="ico">👤</span><div><div class="t">员工与权限</div><div class="d">收银员 / 店长</div></div><span class="chev">›</span></div>
-        <div class="wl" onclick="switchTab('settings')"><span class="ico">🗄️</span><div><div class="t">数据备份</div><div class="d">导入 / 导出</div></div><span class="chev">›</span></div>
-        <div class="wl" onclick="openSmsLog()"><span class="ico">✉️</span><div><div class="t">短信通知</div><div class="d">发送记录</div></div><span class="chev">›</span></div>
-        <div class="wl" onclick="openModal('helpModal')"><span class="ico">❓</span><div><div class="t">帮助中心</div><div class="d">使用说明</div></div><span class="chev">›</span></div>
+        <div class="wl" onclick="openStaffModal()"><span class="ico" style="color:#378add"><svg class="ic-svg" viewBox="0 0 24 24"><circle cx="12" cy="8" r="3.2"/><path d="M5.2 20c0-3.6 3-5.6 6.8-5.6s6.8 2 6.8 5.6"/></svg></span><div><div class="t">员工与权限</div><div class="d">收银员 / 店长</div></div><span class="chev">›</span></div>
+        <div class="wl" onclick="switchTab('settings')"><span class="ico" style="color:#7c5cd6"><svg class="ic-svg" viewBox="0 0 24 24"><ellipse cx="12" cy="6.4" rx="7" ry="2.9"/><path d="M5 6.4v11.2c0 1.6 3.1 2.9 7 2.9s7-1.3 7-2.9V6.4"/></svg></span><div><div class="t">数据备份</div><div class="d">导入 / 导出</div></div><span class="chev">›</span></div>
+        <div class="wl" onclick="openSmsLog()"><span class="ico" style="color:#1d9e75"><svg class="ic-svg" viewBox="0 0 24 24"><rect x="3.2" y="5.4" width="17.6" height="13.2" rx="2"/><path d="m4.2 7 7.1 5.2a1.2 1.2 0 0 0 1.4 0L19.8 7"/></svg></span><div><div class="t">短信通知</div><div class="d">发送记录</div></div><span class="chev">›</span></div>
+        <div class="wl" onclick="openModal('helpModal')"><span class="ico" style="color:#d9822b"><svg class="ic-svg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.6"/><path d="M9.6 9.5a2.5 2.5 0 1 1 3.5 2.3c-.7.3-1.1.9-1.1 1.7v.3"/><circle cx="12" cy="17" r=".95" fill="currentColor" stroke="none"/></svg></span><div><div class="t">帮助中心</div><div class="d">使用说明</div></div><span class="chev">›</span></div>
       </div>
 
       <div class="wb-sec" style="margin-top:12px">今日概览</div>
@@ -557,7 +619,7 @@
                 <input id="cartSearch" autocomplete="off" placeholder="姓名 / 手机号 / 尾号，如：张三 或 1380000"
                   oninput="onCartQuery()" style="flex:1;min-width:100px">
                 <button class="ghost" id="cartCardBtn" onclick="openCardModal()"
-                  style="white-space:nowrap">🎫 消费开卡</button>
+                  style="white-space:nowrap"><svg class="ic-svg" viewBox="0 0 24 24"><path d="M3.2 8.4a2 2 0 0 1 2-2h13.6a2 2 0 0 1 2 2v1.3a2.3 2.3 0 0 0 0 4.6v1.3a2 2 0 0 1-2 2H5.2a2 2 0 0 1-2-2v-1.3a2.3 2.3 0 0 0 0-4.6z"/></svg>消费开卡</button>
               </div>
               <div id="cartPhoneTip" class="pill" style="margin-top:5px"></div>
             </div>
@@ -584,12 +646,12 @@
 
     <!-- 商品管理 -->
     <section id="tab-products" class="hidden">
-      <div class="toolbar">
+      <div class="toolbar prod-tools">
         <button class="primary" onclick="openProductModal()">+ 新增商品</button>
-        <button class="ghost" onclick="openStockIn()">📥 入库</button>
-        <button class="ghost" onclick="openStockOut()">📤 出库/报损</button>
-        <button class="ghost" onclick="openStockCheck()">🔍 盘点</button>
-        <button class="ghost" onclick="openStockLog()">📋 库存流水</button>
+        <button class="ghost" onclick="openStockIn()"><svg class="ic-svg" viewBox="0 0 24 24"><path d="M12 4v9"/><path d="m8.2 9.6 3.8 3.8 3.8-3.8"/><path d="M4.2 15.2v3.4a1.6 1.6 0 0 0 1.6 1.6h12.4a1.6 1.6 0 0 0 1.6-1.6v-3.4"/></svg>入库</button>
+        <button class="ghost" onclick="openStockOut()"><svg class="ic-svg" viewBox="0 0 24 24"><path d="M12 20v-9"/><path d="m8.2 14.4 3.8-3.8 3.8 3.8"/><path d="M4.2 8.8V5.4a1.6 1.6 0 0 1 1.6-1.6h12.4a1.6 1.6 0 0 1 1.6 1.6v3.4"/></svg>出库/报损</button>
+        <button class="ghost" onclick="openStockCheck()"><svg class="ic-svg" viewBox="0 0 24 24"><circle cx="10.6" cy="10.6" r="6"/><path d="m15.2 15.2 4.4 4.4"/></svg>盘点</button>
+        <button class="ghost" onclick="openStockLog()"><svg class="ic-svg" viewBox="0 0 24 24"><path d="M5.2 7.4h13.6M5.2 12h13.6M5.2 16.6h9"/></svg>库存流水</button>
         <button class="ghost" onclick="exportProducts()">导出商品</button>
         <button class="ghost" onclick="document.getElementById('impProd').click()">导入商品</button>
         <input id="impProd" type="file" accept=".json" class="hidden" onchange="importProducts(this)">
@@ -662,9 +724,9 @@
     <!-- 会员 -->
     <section id="tab-members" class="hidden">
       <div class="toolbar">
-        <button class="primary" onclick="openMemberModal()">+ 新增会员</button>
-        <button class="ghost" onclick="openCardModal()">🎫 消费开卡</button>
-        <button class="ghost" onclick="openSmsLog()">✉️ 短信记录 <span id="smsBadge" class="pill"></span></button>
+        <button class="primary tb-act" onclick="openMemberModal()"><svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.2"/><path d="M3.4 19.2c0-3.1 2.5-4.8 5.6-4.8 1.5 0 2.8.4 3.8 1.2"/><path d="M18.6 14.2v6M15.6 17.2h6"/></svg>新增会员</button>
+        <button class="ghost tb-act" onclick="openCardModal()"><svg viewBox="0 0 24 24"><path d="M3.2 8.4a2 2 0 0 1 2-2h13.6a2 2 0 0 1 2 2v1.3a2.3 2.3 0 0 0 0 4.6v1.3a2 2 0 0 1-2 2H5.2a2 2 0 0 1-2-2v-1.3a2.3 2.3 0 0 0 0-4.6z"/><path d="M12 9.6v4.8" stroke-dasharray="1.6 1.8"/></svg>消费开卡</button>
+        <button class="ghost tb-act" onclick="openSmsLog()"><svg viewBox="0 0 24 24"><rect x="3.2" y="5.4" width="17.6" height="13.2" rx="2"/><path d="m4.2 7 7.1 5.2a1.2 1.2 0 0 0 1.4 0L19.8 7"/></svg>短信记录 <span id="smsBadge" class="pill"></span></button>
         <div class="spacer"></div>
         <input id="memFilter" placeholder="搜索会员/手机号/卡号…" oninput="renderMembers()" style="max-width:240px">
       </div>
@@ -689,7 +751,7 @@
         <div class="field"><label>店铺名称</label><input id="setName" oninput="saveSettings()"></div>
         <div class="field"><label>店铺Logo（显示在收银台与小票）</label>
           <div class="file-pick">
-            <button class="ghost" onclick="document.getElementById('setLogo').click()">📷 选择图片</button>
+            <button class="ghost" onclick="document.getElementById('setLogo').click()"><svg class="ic-svg" viewBox="0 0 24 24"><path d="M4 8.6h3l1.4-2.1h7.2L17 8.6h3v9.4a1.6 1.6 0 0 1-1.6 1.6H5.6A1.6 1.6 0 0 1 4 18z"/><circle cx="12" cy="13.2" r="3.1"/></svg>选择图片</button>
             <span class="fp-name" id="logoFileName">未选择图片</span>
           </div>
           <input id="setLogo" type="file" accept="image/*" class="hidden" onchange="setLogoFromFile(this)">
@@ -1155,13 +1217,6 @@ exports.main_handler = async (event) => {
   <button class="primary" onclick="toggleCart()">购物清单 ▲</button>
 </div>
 
-<!-- 安装为 App 提示 -->
-<div id="installHint" class="hidden">
-  <div class="ih-text" id="ihText"></div>
-  <button class="primary" id="ihBtn" onclick="doInstall()">安装</button>
-  <button class="ghost" onclick="dismissHint()">✕</button>
-</div>
-
 <div class="toast" id="toast"></div>
 
 <!-- 登录门：账号登录（本机账号，不需要任何服务器） -->
@@ -1348,6 +1403,9 @@ document.getElementById('bottomNav').addEventListener('click',e=>{
 });
 function switchTab(t){
   activeTab=t;
+  /* 头部里那两条「快速收银 / 商品收银」只属于工作台；切到会员/报表/设置时收起，
+     否则每个页面顶上都会多挂两条与内容无关的动作（v1.6.4） */
+  document.body.classList.toggle('on-dash',t==='dash');
   document.querySelectorAll('#nav button').forEach(b=>b.classList.toggle('active',b.dataset.tab===t));
   /* 底部标签：收银台属于「工作台」的下级，保持工作台高亮 */
   document.querySelectorAll('#bottomNav button').forEach(b=>
@@ -1881,7 +1939,7 @@ function renderProductTable(){
   const tb=document.getElementById('prodTable');
   let list=S.products.filter(p=>!q||p.name.toLowerCase().includes(q)||(p.barcode||'').includes(q));
   renderStockAlert();
-  if(!list.length){tb.innerHTML='<tr><td colspan="8" class="empty">暂无商品</td></tr>';return;}
+  if(!list.length){tb.innerHTML='<tr class="mob-empty"><td colspan="8" class="empty"><div class="empty-box"><svg class="eb-ic" viewBox="0 0 24 24"><path d="M4 8.2 12 4l8 4.2v7.6L12 20l-8-4.2z"/><path d="m4 8.2 8 4.2 8-4.2M12 12.4V20"/></svg><div class="eb-t">还没有商品</div><div class="eb-d">点上面「新增商品」录入第一件</div></div></td></tr>';return;}
   tb.innerHTML=list.map(p=>{
     const cost=Number(p.cost)||0;
     const gross=Number(p.price)-cost;
@@ -2122,7 +2180,7 @@ function renderMembers(){
   const q=(document.getElementById('memFilter').value||'').trim().toLowerCase();
   const tb=document.getElementById('memTable');
   let list=S.members.filter(m=>!q||m.name.toLowerCase().includes(q)||(m.phone||'').includes(q)||(m.no||'').toLowerCase().includes(q));
-  if(!list.length){tb.innerHTML='<tr><td colspan="7" class="empty">暂无会员，可在收银台用「消费开卡」快速发卡</td></tr>';return;}
+  if(!list.length){tb.innerHTML='<tr class="mob-empty"><td colspan="7" class="empty"><div class="empty-box"><svg class="eb-ic" viewBox="0 0 24 24"><circle cx="9.2" cy="8.2" r="3.1"/><path d="M3.4 19.4c0-3 2.6-4.6 5.8-4.6s5.8 1.6 5.8 4.6"/><path d="M16.2 8.6a2.9 2.9 0 0 1 0 5.4M17.6 19.4c0-2.2-.9-3.7-2.4-4.3"/></svg><div class="eb-t">还没有会员</div><div class="eb-d">可在收银台用「消费开卡」快速发卡</div></div></td></tr>';return;}
   tb.innerHTML=list.map(m=>`
     <tr>
       <td><span class="pill" style="color:var(--brand);font-weight:700">${m.no||'-'}</span></td>
@@ -3104,8 +3162,9 @@ function renderHeader(){
   const box=document.getElementById('hdrLogo');
   if(S.shop.logo){box.innerHTML='<img src="'+S.shop.logo+'" style="width:34px;height:34px;border-radius:9px;object-fit:cover">';}
   else{box.textContent='收';}
-  const sb=document.getElementById('staffBtn');
-  if(sb)sb.textContent='👤 '+currentUser()+(isOwner()?'':'（收银员）');
+  /* 只改文字节点：图标是内嵌 SVG，写成 textContent 会把图标一起冲掉 */
+  const sb=document.getElementById('staffBtnLabel');
+  if(sb)sb.textContent=currentUser()+(isOwner()?'':'（收银员）');
   const hdrSub=document.getElementById('hdrSub');
   if(hdrSub)hdrSub.textContent=S.shop.loginRequired?(isOwner()?'店长权限 · 可管理商品与员工':'收银员权限 · 仅可收款'):'跨平台 · 离线可用 · 数据本地存储';
   applyDiscountPermission();
@@ -3279,7 +3338,7 @@ function bkCSV(rows){
   }).join(',')).join('\r\n');
 }
 function bkPack(){
-  return {app:'通用收银台',version:'1.6.3',exportedAt:new Date().toISOString(),
+  return {app:'通用收银台',version:'1.6.4',exportedAt:new Date().toISOString(),
     shop:S.shop,products:S.products,members:S.members,orders:S.orders,
     shifts:S.shifts,stockLog:S.stockLog,smsLog:S.smsLog,holds:S.holds,
     seq:S.seq,cardSeq:S.cardSeq};
@@ -3310,7 +3369,7 @@ function expXLSX(){
     ['订单数',S.orders.length],
     ['库存流水',(S.stockLog||[]).length],
     ['短信记录',(S.smsLog||[]).length],
-    ['软件版本','通用收银台 1.6.3']
+    ['软件版本','通用收银台 1.6.4']
   ]});
   downloadBlob(bkBuildXLSX(sheets),'通用收银台数据_'+todayStr()+'.xlsx');
   toast('已导出 Excel（'+sheets.length+' 个工作表）');
@@ -4581,15 +4640,17 @@ window.addEventListener('appinstalled',()=>dismissHint());
 function isIOS(){return /iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.userAgent.includes('Mac')&&'ontouchend'in document&&!/Chrome/.test(navigator.userAgent));}
 function showInstallHint(canInstall){
   const hint=document.getElementById('installHint');if(!hint)return;
-  if(canInstall){document.getElementById('ihText').textContent='📲 可安装为 App，离线也能用';document.getElementById('ihBtn').classList.remove('hidden');}
-  else if(isIOS()){document.getElementById('ihText').textContent='📲 点 Safari 底部“分享”→“添加到主屏幕”即可安装为 App';document.getElementById('ihBtn').classList.add('hidden');}
+  if(canInstall){document.getElementById('ihText').textContent='可安装为 App，离线也能用';document.getElementById('ihBtn').classList.remove('hidden');}
+  else if(isIOS()){document.getElementById('ihText').textContent='点「分享」→「添加到主屏幕」可当 App 用';document.getElementById('ihBtn').classList.add('hidden');}
   else return;
   hint.classList.remove('hidden');
+  /* 只提示一次：显示过就记账，避免每次打开都顶一条横幅 */
+  try{localStorage.setItem('pos_ih_seen','1');}catch(e){}
 }
 function doInstall(){if(_deferredPrompt){_deferredPrompt.prompt();_deferredPrompt.userChoice.then(()=>{_deferredPrompt=null;dismissHint();});}}
-function dismissHint(){const h=document.getElementById('installHint');if(h)h.classList.add('hidden');try{localStorage.setItem('pos_ih_dismiss','1');}catch(e){}}
+function dismissHint(){const h=document.getElementById('installHint');if(h)h.classList.add('hidden');try{localStorage.setItem('pos_ih_dismiss','1');localStorage.setItem('pos_ih_seen','1');}catch(e){}}
 /* iOS 无 beforeinstallprompt，首次进入给出手动提示 */
-if(isIOS()&&!window.matchMedia('(display-mode: standalone)').matches&&!localStorage.getItem('pos_ih_dismiss')){
+if(isIOS()&&!window.matchMedia('(display-mode: standalone)').matches&&!localStorage.getItem('pos_ih_dismiss')&&!localStorage.getItem('pos_ih_seen')){
   showInstallHint(false);
 }
 
