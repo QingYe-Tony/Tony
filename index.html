@@ -232,8 +232,9 @@
     .mcb-info .mcb-total{font-weight:800;font-size:17px}
     .mcb-info .mcb-sub{font-size:12px;color:var(--muted)}
     #mobileCartBar .primary{padding:12px 22px;font-size:16px}
-    /* 弹窗全屏 */
-    .modal{width:100%;max-height:100vh;height:100vh;border-radius:0;padding:16px}
+    /* 弹窗：手机上也是带圆角的安全区浮层卡片（不再满屏白板、内容贴顶） */
+    .modal{width:100%;max-height:88vh;height:auto;border-radius:16px;
+      padding:18px 16px calc(18px + env(safe-area-inset-bottom))}
     .stats{grid-template-columns:repeat(2,1fr)}
     table{font-size:12px}
     th,td{padding:7px 8px}
@@ -3317,7 +3318,7 @@ function bkCSV(rows){
   }).join(',')).join('\r\n');
 }
 function bkPack(){
-  return {app:'通用收银台',version:'1.6.5',exportedAt:new Date().toISOString(),
+  return {app:'通用收银台',version:'1.6.6',exportedAt:new Date().toISOString(),
     shop:S.shop,products:S.products,members:S.members,orders:S.orders,
     shifts:S.shifts,stockLog:S.stockLog,smsLog:S.smsLog,holds:S.holds,
     seq:S.seq,cardSeq:S.cardSeq};
@@ -3348,7 +3349,7 @@ function expXLSX(){
     ['订单数',S.orders.length],
     ['库存流水',(S.stockLog||[]).length],
     ['短信记录',(S.smsLog||[]).length],
-    ['软件版本','通用收银台 1.6.5']
+    ['软件版本','通用收银台 1.6.6']
   ]});
   downloadBlob(bkBuildXLSX(sheets),'通用收银台数据_'+todayStr()+'.xlsx');
   toast('已导出 Excel（'+sheets.length+' 个工作表）');
