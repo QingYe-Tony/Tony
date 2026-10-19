@@ -476,7 +476,7 @@
     <div class="logo" id="hdrLogo">收</div>
     <div>
       <div class="shop-name" id="hdrShop">商户收银系统</div>
-      <div class="shop-sub" id="hdrSub">跨平台 · 离线可用 · 数据本地存储</div>
+      <div class="shop-sub" id="hdrSub">跨平台 · 数据本地存储</div>
     </div>
     <nav id="nav">
       <button data-tab="dash" class="active">工作台</button>
@@ -1278,7 +1278,7 @@ exports.main_handler = async (event) => {
 <div id="staffModal" class="modal-bg hidden">
   <div class="modal" style="width:min(560px,100%)">
     <h3>员工与权限</h3>
-    <div class="switch-row"><input type="checkbox" id="stEnable" onchange="saveStaff()"> 打开应用时要求登录账号</div>
+    <div class="switch-row"><input type="checkbox" id="stEnable" checked disabled> 打开应用时必须登录账号（已强制开启，不可关闭）</div>
     <div class="switch-row"><input type="checkbox" id="stLockDiscount" onchange="saveStaff()"> 仅店长可修改整单优惠</div>
     <p class="cfg-help">这里只管「谁在收银」和权限，不用来登录 —— 打开应用时的登录用的是<b>账号登录</b>。</p>
     <p class="cfg-help">权限：店长可管理商品 / 员工 / 清空数据；收银员仅可收款。</p>
@@ -1302,7 +1302,7 @@ exports.main_handler = async (event) => {
 <script>
 /* ============ 存储层 ============ */
 const KEY='pos_system_v1';
-const APP_VER='1.6.9';   // 全站唯一版本常量：导出/关于页/检查更新都用它（发版时只改这一处）
+const APP_VER='1.7.0';   // 全站唯一版本常量：导出/关于页/检查更新都用它（发版时只改这一处）
 const DEF_SMS_TPL={
   open:'【{店铺}】{姓名}您好，您的会员卡已开通，卡号{卡号}，本次消费{金额}元，获赠{积分}积分，当前积分{总积分}，账户余额{余额}元。感谢惠顾！',
   consume:'【{店铺}】{姓名}您好，本次消费{金额}元，获得{积分}积分，当前积分{总积分}，余额{余额}元。欢迎再次光临！',
@@ -1319,7 +1319,7 @@ const DEF_S={
     ],
     promo:{memberDiscount:true,roundOff:false,roundMode:'jiao',fullReduce:[]},
     staff:[{id:'owner',name:'店长',role:'owner',pin:''}],
-    loginRequired:false,lockDiscount:false,
+    loginRequired:true,lockDiscount:false,   /* v1.7.0：默认强制登录，所有端必须登录账号 */
     /* 收银台显示哪些支付方式（设置页可手动开关）；balance = 会员卡余额 */
     pay:{cash:true,wx:true,ali:true,card:true,balance:true,mix:true},
     sms:{enabled:true,channel:'local',webhook:'',sign:'',onOpen:true,onConsume:false,onTopup:false,
@@ -1330,6 +1330,7 @@ const DEF_S={
 let S=JSON.parse(JSON.stringify(DEF_S));
 function normalize(){
   S.shop=Object.assign({},DEF_S.shop,S.shop||{});
+  S.shop.loginRequired=true;   /* v1.7.0：强制登录（老数据一律迁移到强制，取消免登录使用） */
   S.shop.card=Object.assign({},DEF_S.shop.card,S.shop.card||{});
   S.shop.sms=Object.assign({},DEF_S.shop.sms,S.shop.sms||{});
   S.shop.sms.templates=Object.assign({},DEF_SMS_TPL,S.shop.sms.templates||{});
@@ -2418,7 +2419,8 @@ function currentStaff(){
 }
 function currentUser(){return currentStaff().name||'店长';}
 function isOwner(){return currentStaff().role==='owner';}
-function requireLogin(){return !!(S.shop.loginRequired&&!SESSION);}
+/* v1.7.0：所有端强制登录 —— 只要没有会话就必须登录，不再允许「不登录也能收银」 */
+function requireLogin(){return !SESSION;}
 /* 登录门 = 账号登录（本机账号）。收银员在「设置 → 员工与权限」里管理，不再单独设一道登录 */
 function openLoginGate(){
   document.getElementById('loginShop').textContent=S.shop.name;
@@ -2490,6 +2492,7 @@ function gateEnterAsOwner(){
   }
   const g=document.getElementById('loginGate');if(g)g.classList.add('hidden');
   renderHeader();refreshStaffHint();renderSyncBox();syncRepaint();
+  switchTab('dash');   /* v1.7.0：登录成功后落到工作台（boot 未登录时不再 switchTab） */
   toast('欢迎，'+currentUser());
 }
 /* ==================================================================
@@ -2763,13 +2766,13 @@ function setOperator(id){
 }
 function openStaffModal(){
   renderStaffRows();
-  document.getElementById('stEnable').checked=!!S.shop.loginRequired;
+  document.getElementById('stEnable').checked=true;   /* v1.7.0：强制登录，恒为勾选 */
   document.getElementById('stLockDiscount').checked=!!S.shop.lockDiscount;
   refreshStaffHint();openModal('staffModal');
 }
 function refreshStaffHint(){
   const h=document.getElementById('staffHint');
-  if(h)h.textContent=(S.shop.loginRequired?'打开时要求登录账号':'打开时不弹登录页')
+  if(h)h.textContent='打开应用必须登录账号'
     +' · '+staffList().length+' 个账号 · 当前 '+currentUser();
 }
 function renderStaffRows(){
@@ -2809,7 +2812,7 @@ function delStaff(id){
   save();renderStaffRows();refreshStaffHint();renderHeader();
 }
 function saveStaff(){
-  S.shop.loginRequired=document.getElementById('stEnable').checked;
+  S.shop.loginRequired=true;   /* v1.7.0：登录强制，用户不可关闭 */
   S.shop.lockDiscount=document.getElementById('stLockDiscount').checked;
   save();refreshStaffHint();renderHeader();applyDiscountPermission();
 }
@@ -3151,7 +3154,7 @@ function renderHeader(){
   const sb=document.getElementById('staffBtnLabel');
   if(sb)sb.textContent=currentUser()+(isOwner()?'':'（收银员）');
   const hdrSub=document.getElementById('hdrSub');
-  if(hdrSub)hdrSub.textContent=S.shop.loginRequired?(isOwner()?'店长权限 · 可管理商品与员工':'收银员权限 · 仅可收款'):'跨平台 · 离线可用 · 数据本地存储';
+  if(hdrSub)hdrSub.textContent=isOwner()?'店长权限 · 可管理商品与员工':'收银员权限 · 仅可收款';
   applyDiscountPermission();
 }
 function renderLogoPreview(){
@@ -5222,7 +5225,7 @@ function foldAll(open){
   card.querySelectorAll('details.set-sec').forEach(d=>{d.open=!!open;});
 }
 
-load();initUI();initSettingsFold();syncBoot();switchTab('dash');
+load();initUI();initSettingsFold();syncBoot();if(!requireLogin())switchTab('dash');   /* v1.7.0：未登录不渲染主界面 */
 </script>
 </body>
 </html>
