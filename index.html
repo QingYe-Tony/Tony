@@ -211,7 +211,8 @@
       padding-bottom:env(safe-area-inset-bottom)}
     /* v1.6.7：必须有 display:flex，否则 flex-direction:column 不生效，
        svg(display:block) 和文字都贴左 → 首项被左边缘裁掉、末格留白（四个项看起来左右拉太开） */
-    #bottomNav button{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;padding:8px 2px;font-size:11px;
+    /* v1.6.9：C 段（文字↔屏幕底/home 条安全区）太远 → 内容贴底坐到安全区上沿，文字不再浮空 */
+    #bottomNav button{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;gap:2px;padding:8px 2px 4px;font-size:11px;
       color:var(--muted);background:transparent;border-radius:0;font-weight:600;text-align:center}
     #bottomNav button span{font-size:20px;line-height:1.1;display:block}
     #bottomNav button.active{color:var(--brand);background:var(--soft)}
@@ -412,7 +413,8 @@
     .rep-hero .rh-big{font-size:32px;margin:10px 0 2px}
     .rep-hero .rh-tabs button{border-radius:6px;padding:4px 16px;font-size:13px}
     .card,.stat{border-radius:10px;box-shadow:none}
-    #bottomNav button{font-size:10.5px;gap:3px;padding:7px 2px}
+    /* v1.6.9：底栏文字贴底（C 段）；底部内边距收到 3px，文字尽量坐到 home 条安全区上沿 */
+    #bottomNav button{font-size:10.5px;gap:3px;padding:7px 2px 3px}
     #bottomNav button svg{width:21px;height:21px}
   }
   @media (max-width:360px){ .wb-tile{font-size:11px} .wb-tile .ic{width:36px;height:36px;font-size:18px} }
@@ -1300,7 +1302,7 @@ exports.main_handler = async (event) => {
 <script>
 /* ============ 存储层 ============ */
 const KEY='pos_system_v1';
-const APP_VER='1.6.8';   // 全站唯一版本常量：导出/关于页/检查更新都用它（发版时只改这一处）
+const APP_VER='1.6.9';   // 全站唯一版本常量：导出/关于页/检查更新都用它（发版时只改这一处）
 const DEF_SMS_TPL={
   open:'【{店铺}】{姓名}您好，您的会员卡已开通，卡号{卡号}，本次消费{金额}元，获赠{积分}积分，当前积分{总积分}，账户余额{余额}元。感谢惠顾！',
   consume:'【{店铺}】{姓名}您好，本次消费{金额}元，获得{积分}积分，当前积分{总积分}，余额{余额}元。欢迎再次光临！',
