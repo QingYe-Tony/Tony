@@ -880,7 +880,7 @@ exports.main_handler = async (event) => {
         <h3>关于 / 更新</h3>
         <p class="pill" id="verText"></p>
         <button class="ghost" onclick="checkUpdates()">检查更新</button>
-        <p class="pill" style="margin-top:6px">更新须在「设置 → publish」配置发布地址后生效（见使用手册）。</p>
+        <p class="pill" style="margin-top:6px">手机 App 点「检查更新」自动对比 GitHub 最新版；桌面版需在「设置 → publish」配置发布地址。</p>
       </div>
     </section>
   </main>
@@ -1300,6 +1300,7 @@ exports.main_handler = async (event) => {
 <script>
 /* ============ 存储层 ============ */
 const KEY='pos_system_v1';
+const APP_VER='1.6.8';   // 全站唯一版本常量：导出/关于页/检查更新都用它（发版时只改这一处）
 const DEF_SMS_TPL={
   open:'【{店铺}】{姓名}您好，您的会员卡已开通，卡号{卡号}，本次消费{金额}元，获赠{积分}积分，当前积分{总积分}，账户余额{余额}元。感谢惠顾！',
   consume:'【{店铺}】{姓名}您好，本次消费{金额}元，获得{积分}积分，当前积分{总积分}，余额{余额}元。欢迎再次光临！',
@@ -3167,7 +3168,27 @@ function setLogoFromFile(input){
 function checkUpdates(){
   if(window.electron&&window.electron.checkForUpdates){
     window.electron.checkForUpdates().then(r=>{if(r&&!r.ok)toast('暂无更新或更新未配置');else toast('已检查更新');});
-  }else{toast('当前为网页版，更新功能需在桌面应用中使用');}
+    return;
+  }
+  /* v1.6.8：手机 App（Capacitor）也走真检查——之前只认桌面 Electron，
+     装好的 APK/IPA 点「检查更新」被误报「当前为网页版」（用户原话：怎么是网页版不是app吗）。 */
+  if(window.Capacitor&&window.Capacitor.isNativePlatform&&window.Capacitor.isNativePlatform()){
+    toast('正在检查更新…');
+    fetch('https://api.github.com/repos/QingYe-Tony/Tony/releases/latest',{headers:{'Accept':'application/vnd.github+json'}})
+      .then(r=>r.json())
+      .then(d=>{
+        const latest=String(d&&d.tag_name||'').replace(/^v/i,'').trim();
+        if(!latest){toast('检查更新失败：未取到版本信息');return;}
+        if(latest===APP_VER){toast('已是最新版本 v'+APP_VER);return;}
+        if(confirm('发现新版本 v'+latest+'（当前 v'+APP_VER+'）\n现在去下载页安装新版吗？')){
+          /* Capacitor 对外部域名的导航默认转系统浏览器（Android intent / iOS Safari） */
+          location.href='https://github.com/QingYe-Tony/Tony/releases/latest';
+        }
+      })
+      .catch(()=>toast('检查更新失败，请检查网络后重试'));
+    return;
+  }
+  toast('当前为网页版，检查更新需在桌面应用或手机 App 中使用');
 }
 function saveSettings(){
   S.shop.name=document.getElementById('setName').value||'我的店铺';
@@ -3320,7 +3341,7 @@ function bkCSV(rows){
   }).join(',')).join('\r\n');
 }
 function bkPack(){
-  return {app:'通用收银台',version:'1.6.7',exportedAt:new Date().toISOString(),
+  return {app:'通用收银台',version:APP_VER,exportedAt:new Date().toISOString(),
     shop:S.shop,products:S.products,members:S.members,orders:S.orders,
     shifts:S.shifts,stockLog:S.stockLog,smsLog:S.smsLog,holds:S.holds,
     seq:S.seq,cardSeq:S.cardSeq};
@@ -3351,7 +3372,7 @@ function expXLSX(){
     ['订单数',S.orders.length],
     ['库存流水',(S.stockLog||[]).length],
     ['短信记录',(S.smsLog||[]).length],
-    ['软件版本','通用收银台 1.6.7']
+    ['软件版本','通用收银台 '+APP_VER]
   ]});
   downloadBlob(bkBuildXLSX(sheets),'通用收银台数据_'+todayStr()+'.xlsx');
   toast('已导出 Excel（'+sheets.length+' 个工作表）');
@@ -4624,6 +4645,7 @@ function initUI(){
   loadSettingsForm();
   renderLogoPreview();
   updateSmsBadge();
+  const verEl0=document.getElementById('verText');if(verEl0)verEl0.textContent='当前版本 v'+APP_VER;
   if(window.electron&&window.electron.getAppVersion){window.electron.getAppVersion().then(v=>{const el=document.getElementById('verText');if(el)el.textContent='当前版本 v'+v;});}
   if(window.electron&&window.electron.onDeployConfig){
     window.electron.onDeployConfig(cfg=>{
