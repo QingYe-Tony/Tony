@@ -1302,7 +1302,7 @@ exports.main_handler = async (event) => {
 <script>
 /* ============ 存储层 ============ */
 const KEY='pos_system_v1';
-const APP_VER='1.7.1';   // 全站唯一版本常量：导出/关于页/检查更新都用它（发版时只改这一处）
+const APP_VER='1.7.2';   // 全站唯一版本常量：导出/关于页/检查更新都用它（发版时只改这一处）
 const DEF_SMS_TPL={
   open:'【{店铺}】{姓名}您好，您的会员卡已开通，卡号{卡号}，本次消费{金额}元，获赠{积分}积分，当前积分{总积分}，账户余额{余额}元。感谢惠顾！',
   consume:'【{店铺}】{姓名}您好，本次消费{金额}元，获得{积分}积分，当前积分{总积分}，余额{余额}元。欢迎再次光临！',
@@ -2687,16 +2687,24 @@ function gateSyncBind(acct,pass){
     }
     if(!base)return;                                 // 仍没找到：纯本机账号，不阻塞登录
     try{
-      let d=null;
+      let d=null,created=false;
       try{d=await syncReq('POST','/api/login',{account:acct,password:pass});}
       catch(e){
-        if(e.status===401)return;                     // 服务器上同名账号、密码不同 → 不覆盖
-        if(e.status===404||!e.status)d=await syncReq('POST','/api/register',
-          {account:acct,password:pass,shopName:S.shop.name});
-        else return;
+        /* v1.7.2：把三种失败分开说，别再静默——静默是「登录了却同步不到」最难查的原因 */
+        if(e.status===401){
+          try{toast('服务器上已有这个账号，但密码不同：本机照常登录，这次不会同步');}catch(_){}
+          return;
+        }
+        if(e.status===404){
+          d=await syncReq('POST','/api/register',{account:acct,password:pass,shopName:S.shop.name});
+          created=true;
+        }else{return;}
       }
       if(!d||!d.token)return;
       syncAdoptAuth(d,acct);
+      if(created){
+        try{toast('服务器上没有这个账号，已新建（空店）。要拿到电脑端的记录，请改用电脑端登录的那个账号');}catch(_){}
+      }
       await syncNow({silent:false});                  // 登录即同步，并把结果提示出来
       renderSyncBox();
     }catch(e){/* 服务器不可达：保持本机登录，不影响使用 */}
@@ -4756,9 +4764,9 @@ function syncBaseDefault(){
   return '';   // 公网域名或本地文件打开 → 不瞎猜，让用户自己填
 }
 /* v1.7.1：手机端「登录即同步」——自动寻找电脑端同步服务（同一 WiFi）。
-   ① 页面本身从内网地址打开 → 同主机:8787；
-   ② 否则轻扫几个常见网段的 .2~.30:8787（并发 + 超时，最多约 2.5s）。
-   找到即返回 base，找不到返回 ''（退回手填地址，不阻塞登录）。 */
+   v1.7.2 修：原来只扫 .2~.30，可路由器 DHCP 常把电脑分到 .100+ / .200+
+   （用户那台就是 192.168.31.223）→ 永远扫不到，登录后静默不同步。
+   现在扫整段 1~254（并发 128、400ms 超时、9 秒硬截止），找到即停。 */
 function _isPrivateIPv4(ip){
   if(!/^\d{1,3}(\.\d{1,3}){3}$/.test(ip))return false;
   const a=ip.split('.').map(Number);
@@ -4777,19 +4785,56 @@ function _probeSync(base,timeout){
     }catch(e){clearTimeout(t);fin(false);}
   });
 }
-async function syncDiscover(){
-  if(SYNC.base)return SYNC.base;
+async function syncDiscover(force){
+  if(SYNC.base&&!force)return SYNC.base;
   try{
     const h=String((location&&location.hostname)||'');
     if(_isPrivateIPv4(h)){const b='http://'+h+':8787';if(await _probeSync(b,900))return b;}
   }catch(e){}
-  const cands=[];
-  ['192.168.1','192.168.0','192.168.31','10.0.0'].forEach(s=>{for(let i=2;i<=30;i++)cands.push('http://'+s+'.'+i+':8787');});
-  let idx=0,found='';
-  async function worker(){while(!found&&idx<cands.length){const b=cands[idx++];if(await _probeSync(b,600)){found=b;return;}}}
-  const ws=[];for(let i=0;i<20;i++)ws.push(worker());
-  await Promise.all(ws);
+  /* 网段按「最常见的家用/办公 DHCP 段」排序；每个段全扫 1~254 */
+  const segs=['192.168.31','192.168.1','192.168.0','192.168.2','192.168.50','10.0.0'];
+  let found='';
+  const deadline=Date.now()+9000;
+  for(let si=0;si<segs.length&&!found;si++){
+    if(Date.now()>deadline)break;
+    const s=segs[si],cands=[];
+    for(let i=1;i<=254;i++)cands.push('http://'+s+'.'+i+':8787');
+    let idx=0;
+    const worker=async function(){
+      while(!found&&Date.now()<deadline&&idx<cands.length){
+        const b=cands[idx++];
+        if(await _probeSync(b,400)){found=b;return;}
+      }
+    };
+    const ws=[];for(let i=0;i<128;i++)ws.push(worker());
+    await Promise.all(ws);
+  }
   return found;
+}
+/* v1.7.2：手动「扫描局域网」——把自动发现的结果直接摊给用户看，不再静默 */
+async function syncScanLan(btn){
+  const old=btn?btn.textContent:'';
+  if(btn){btn.disabled=true;btn.textContent='扫描中…';}
+  try{
+    const t0=Date.now();
+    const b=await syncDiscover(true);
+    const sec=((Date.now()-t0)/1000).toFixed(1);
+    if(b){
+      SYNC.base=b;syncPersist();
+      const el=document.getElementById('syncBase');if(el)el.value=b;
+      toast('找到电脑端：'+b+'（'+sec+'秒）');
+      try{
+        const d=await syncReq('GET','/api/me');
+        toast('地址已自动填入并连通，服务器上有 '+(d.orderCount||0)+' 笔订单');
+      }catch(e){toast('地址已自动填入：'+b);}
+    }else{
+      toast('扫了 '+sec+' 秒没找到。请确认：①手机和电脑连的是同一个 WiFi；'
+        +'②电脑上收银台是打开的；③在电脑端「我的 → 多端同步」里看那个地址，手动填进来');
+    }
+  }finally{
+    if(btn){btn.disabled=false;btn.textContent=old||'扫描局域网';}
+    renderSyncBox();
+  }
 }
 function syncLoad(){
   try{const r=localStorage.getItem(SYNC_KEY);if(r)SYNC=Object.assign({},SYNC_DEF,JSON.parse(r));}catch(e){}
@@ -4969,7 +5014,7 @@ async function syncNow(opts){
   if(_syncing)return;
   if(navigator.onLine===false&&!opts.silent){toast('当前没有网络，联网后再同步');return;}
   _syncing=true;_syncErr='';renderSyncBox();
-  let ok=false;
+  let ok=false,upOrders=0,downOrders=0;
   try{
     const me=await syncReq('GET','/api/me');
     let serverRev=Number((me.shop&&me.shop.rev)||0);
@@ -4994,8 +5039,8 @@ async function syncNow(opts){
       }else{throw e;}
     }
     SYNC.shopRev=Number((put&&put.rev)||serverRev);
-    const upOrders=await syncPushOrders();
-    const downOrders=await syncPullOrders();
+    upOrders=await syncPushOrders();
+    downOrders=await syncPullOrders();
     if(upOrders||downOrders)merged=true;
     SYNC.lastSync=new Date().toISOString();
     SYNC.deviceTag=SYNC_DEVICE;
@@ -5006,7 +5051,14 @@ async function syncNow(opts){
     if(!opts.silent)toast('同步失败：'+_syncErr);
   }finally{
     _syncing=false;syncPersist();renderSyncBox();
-    if(ok&&!opts.silent)toast('同步完成');
+    if(ok&&!opts.silent){
+      /* v1.7.2：说清楚同步了什么——「同步完成」四个字在出问题时毫无信息量 */
+      let msg='同步完成';
+      if(upOrders||downOrders)msg+='：上传 '+upOrders+' 笔、下载 '+downOrders+' 笔订单';
+      else if(!(S.orders||[]).length)msg+='，但这个账号名下还没有订单';
+      else msg+='，已是最新';
+      toast(msg);
+    }
   }
 }
 /* 数据一改就排一次同步（防抖），避免每次点按都打网络 */
@@ -5038,18 +5090,63 @@ function syncReadBase(){
   syncPersist();
   return SYNC.base;
 }
+/* v1.7.2：地址一律规范化（补 http://、去尾斜杠）。
+   以前填错了只弹一句「已保存」，用户以为配好了，实际一条都没同步。 */
+let _syncTestMsg='';
+function syncNormBase(v){
+  let s=String(v||'').trim();
+  if(!s)return '';
+  if(!/^[a-z][a-z0-9+.-]*:\/\//i.test(s))s='http://'+s;
+  return s.replace(/\/+$/,'');
+}
 function syncSetBase(){
-  syncReadBase();
-  toast('服务器地址已保存：'+SYNC.base);
+  const v=syncNormBase(syncInput('syncBase'));
+  if(!v){toast('请先填电脑端的地址，例如 http://192.168.31.223:8787');return;}
+  if(!/^https?:\/\//i.test(v)){toast('只支持 http:// 或 https:// 开头的地址');return;}
+  const m=v.match(/^https?:\/\/([^\/:]+)(?::(\d+))?/i);
+  const host=m?m[1]:'';
+  SYNC.base=v;syncPersist();
+  const el=document.getElementById('syncBase');if(el)el.value=v;
   renderSyncBox();
+  if(host&&!/^(localhost|127\.0\.0\.1)$/i.test(host)&&!/^\d{1,3}(\.\d{1,3}){3}$/.test(host)){
+    _syncTestMsg='地址已保存，但「'+host+'」不是 IP 形式。手机同步要填电脑的<b>局域网 IP</b>（在电脑端「多端同步」里能看到）。';
+    renderSyncBox();return;
+  }
+  _syncTestMsg='地址已保存，正在测试连接…';renderSyncBox();
+  (async()=>{
+    const ok=await _probeSync(v,1800);
+    if(!ok){
+      _syncTestMsg='<b style="color:var(--danger)">连不上 '+escapeHtml(v)+'</b>：请确认电脑上收银台开着，'
+        +'且端口是 <b>8787</b>（不是 9797 / 8080），手机和电脑在同一个 WiFi。';
+      renderSyncBox();return;
+    }
+    let extra='';
+    if(SYNC.token){
+      try{const d=await syncReq('GET','/api/me');
+        extra='；账号 <b>'+escapeHtml(syncWho())+'</b> 在服务器上有 <b>'+(d.orderCount||0)+'</b> 笔订单';
+      }catch(e){extra='；但登录态已失效，请重新登录';}
+    }else{
+      extra='；接下来请在下面登录<b>电脑端用的那个账号</b>';
+    }
+    _syncTestMsg='<span style="color:var(--ok)">✓ 连接正常</span>：'+escapeHtml(v)+extra;
+    renderSyncBox();
+  })();
 }
 function syncSetAuto(v){SYNC.auto=!!v;syncPersist();if(SYNC.auto&&SYNC.token)syncNow({silent:true});}
 async function syncTest(){
   try{
     syncReadBase();
     const d=await syncReq('GET','/health');
-    _syncErr='';toast('服务器连接正常（已注册 '+(d.users||0)+' 个账号）');
-  }catch(e){_syncErr=e.message;toast(e.message);}
+    _syncErr='';
+    let msg='服务器连接正常（已注册 '+(d.users||0)+' 个账号）';
+    if(SYNC.token){
+      try{const me=await syncReq('GET','/api/me');
+        msg+='；当前账号 '+syncWho()+' 上有 '+(me.orderCount||0)+' 笔订单';
+      }catch(e){msg+='；但登录态已失效，请重新登录';}
+    }
+    _syncTestMsg='<span style="color:var(--ok)">✓ </span>'+escapeHtml(msg);
+    toast(msg);
+  }catch(e){_syncErr=e.message;_syncTestMsg='';toast(e.message);}
   renderSyncBox();
 }
 async function syncRegister(){
@@ -5121,6 +5218,10 @@ function syncEmbedCard(){
   if(EMBED.lan&&EMBED.lan.length){
     h+='<div class="sync-kv"><span>手机/其他电脑填</span><code class="inline">'+esc2(EMBED.lan[0])+'</code>'
       +'<button class="ghost sm" onclick="syncCopy(\''+esc2(EMBED.lan[0])+'\')">复制</button></div>';
+    /* v1.7.2：手机上还必须用「同一个账号」登录，否则两台设备各有一份数据、互相看不见 */
+    if(SYNC.token)
+      h+='<div class="sync-kv"><span>手机请用这个账号登录</span><code class="inline">'+esc2(syncWho())+'</code>'
+        +'<button class="ghost sm" onclick="syncCopy(\''+esc2(syncWho())+'\')">复制</button></div>';
     if(EMBED.lan.length>1)
       h+='<div class="cfg-help">其他网卡地址：'+EMBED.lan.slice(1).map(esc2).join('、')+'</div>';
   }else{
@@ -5144,6 +5245,46 @@ function syncOpenDir(){
     window.electron.openSyncDataDir().then(r=>{if(r&&!r.ok)toast('打不开目录：'+(r.error||''));}).catch(()=>{});
   }
 }
+/* v1.7.2：当前运行环境的中文名（设置页顶部自报版本，用户能确认装的是哪一版） */
+function envLabel(){
+  try{
+    if(isDesktop())return '桌面版';
+    if(window.Capacitor&&window.Capacitor.isNativePlatform&&window.Capacitor.isNativePlatform())return '手机 App';
+    return '网页版';
+  }catch(e){return '未知环境';}
+}
+/* v1.7.2：把「服务器上有多少 / 本机有多少」摊开。
+   账号不同、或电脑端还没上传时用户能立刻看见，而不是干等「已同步」却什么都没有。 */
+async function refreshSyncStat(){
+  const el=document.getElementById('syncStat');
+  if(!el)return;
+  if(!SYNC.token||!SYNC.base){el.innerHTML='';return;}
+  el.innerHTML='<p class="cfg-help">正在读取服务器数据…</p>';
+  try{
+    const me=await syncReq('GET','/api/me');
+    const sh=await syncReq('GET','/api/shop');
+    const pl=(sh&&sh.payload)||{};
+    const sp=Array.isArray(pl.products)?pl.products.length:0;
+    const sm=Array.isArray(pl.members)?pl.members.length:0;
+    const so=me.orderCount||0;
+    const lp=(S.products||[]).length,lm=(S.members||[]).length,lo=(S.orders||[]).length;
+    let h='<div class="row" style="flex-wrap:wrap;gap:8px;margin:4px 0">'
+      +'<span class="pill">服务器：'+sp+' 商品 / '+sm+' 会员 / '+so+' 订单</span>'
+      +'<span class="pill">本机：'+lp+' 商品 / '+lm+' 会员 / '+lo+' 订单</span></div>';
+    if(sp===0&&so===0&&(lp>0||lo>0)){
+      h+='<p class="cfg-help" style="color:var(--danger)"><b>这个账号在服务器上还是空的。</b>'
+        +'要么电脑端登录的不是这个账号（两个账号各有一份数据，互不可见），'
+        +'要么电脑端还没把数据传上来。<br>请到那台有数据的电脑上：用<b>同一个账号</b>登录 → '
+        +'「多端同步」→ 点「立即同步」，再回来点「立即同步」。</p>';
+    }else if(sp===0&&so===0&&lp===0&&lo===0){
+      h+='<p class="cfg-help">服务器和本机都还是空的，先录入商品或收银试试。</p>';
+    }
+    el.innerHTML=h;
+  }catch(e){
+    el.innerHTML='<p class="cfg-help" style="color:var(--danger)">读取服务器数据失败：'
+      +escapeHtml(e.message||'')+'</p>';
+  }
+}
 function renderSyncBox(){
   const box=document.getElementById('syncBox');
   if(!box)return;
@@ -5153,22 +5294,26 @@ function renderSyncBox(){
     const st=_syncing?'同步中…':(_syncErr?'同步失败':(SYNC.lastSync?'已同步':'尚未同步'));
     const color=_syncErr?'color:var(--danger)':(_syncing?'':'color:var(--ok)');
     box.innerHTML=
-      '<div class="row" style="flex-wrap:wrap;gap:8px;align-items:center;margin:8px 0">'
+      '<div class="cfg-help" style="margin:6px 0 2px">当前版本 <b>v'+esc(APP_VER)+'</b> · '+esc(envLabel())+'</div>'
+      +'<div class="row" style="flex-wrap:wrap;gap:8px;align-items:center;margin:8px 0">'
       +'<span class="pill">已登录 <b>'+esc(syncWho())+'</b></span>'
       +'<span class="pill">本机 '+esc(SYNC_DEVICE)+'</span>'
       +'<span class="pill" style="'+color+'">'+esc(st)+'</span>'
       +(SYNC.lastSync?('<span class="pill">上次 '+esc(fmtShortTime(SYNC.lastSync))+'</span>'):'')
       +'</div>'
       +(_syncErr?('<p class="cfg-help" style="color:var(--danger)">'+esc(_syncErr)+'</p>'):'')
+      +(_syncTestMsg?('<p class="cfg-help">'+_syncTestMsg+'</p>'):'')
+      +'<div id="syncStat"></div>'
       +card
       +'<div class="row" style="margin:10px 0;gap:8px;flex-wrap:wrap">'
       +'<button class="primary" onclick="syncNow()">立即同步</button>'
       +'<button class="ghost" onclick="syncTest()">测试连接</button>'
+      +'<button class="ghost" onclick="syncScanLan(this)">扫描局域网</button>'
       +'<button class="ghost" onclick="syncLogout()">退出登录</button>'
       +'</div>'
       +'<div class="row" style="gap:8px;align-items:flex-end">'
       +'<div class="field" style="flex:1"><label>同步服务器地址</label>'
-      +'<input id="syncBase" value="'+esc(SYNC.base)+'" placeholder="http://192.168.1.5:8787"></div>'
+      +'<input id="syncBase" value="'+esc(SYNC.base)+'" placeholder="http://192.168.31.223:8787"></div>'
       +'<button class="ghost" onclick="syncSetBase()">保存地址</button></div>'
       +'<div class="switch-row"><input type="checkbox" id="syncAuto" '+(SYNC.auto?'checked':'')
       +' onchange="syncSetAuto(this.checked)"> 改动后自动同步（推荐）</div>'
@@ -5177,8 +5322,10 @@ function renderSyncBox(){
   }else{
     const locals=Object.keys(ACCTS).map(function(k){return ACCTS[k];});
     box.innerHTML=
-      '<p class="pill">本机账号：<b>不需要服务器</b>也能注册登录（打开应用时的登录界面上就有）。'
+      '<div class="cfg-help" style="margin:6px 0 2px">当前版本 <b>v'+esc(APP_VER)+'</b> · '+esc(envLabel())+'</div>'
+      +'<p class="pill">本机账号：<b>不需要服务器</b>也能注册登录（打开应用时的登录界面上就有）。'
       +'想让手机 / 多台电脑看到同一份数据，再展开下面的「多端同步」。</p>'
+      +(_syncTestMsg?('<p class="cfg-help">'+_syncTestMsg+'</p>'):'')
       +(locals.length?('<div class="field"><label>本机已注册的账号（'+locals.length+' 个）</label>'
         +locals.map(function(r){
           return '<div class="row" style="justify-content:space-between;align-items:center;gap:8px;'
@@ -5191,15 +5338,22 @@ function renderSyncBox(){
       +'多端同步（可选 · 不配也能正常收银）</summary>'
       +card
       +'<div class="field" style="margin-top:8px"><label>同步服务器地址</label>'
-      +'<input id="syncBase" value="'+esc(SYNC.base)+'" placeholder="http://192.168.1.5:8787"></div>'
+      +'<input id="syncBase" value="'+esc(SYNC.base)+'" placeholder="http://192.168.31.223:8787"></div>'
       +(isDesktop()
         ? '<p class="cfg-help">桌面版的标准端口是 <code class="inline">8787</code>，'
           +'上面这个地址启动应用时已自动填好；被占用时会自动顺延到 8788/8789…，'
           +'此时以状态卡里显示的端口为准。</p>'
-        : '<p class="cfg-help">服务器程序在安装包的 <code class="inline">sync-server</code> 文件夹里：'
-          +'在一台电脑上双击「启动同步服务器」，窗口里会显示局域网地址；'
-          +'手机、其他电脑连同一个 WiFi 后填那个地址即可。'
-          +'如果那台电脑装的是桌面版收银台，就不用再手动启动——它自己会跑。</p>')
+        : '<p class="cfg-help"><b>手机要同步电脑上的记录，三件事必须同时成立：</b><br>'
+          +'① 电脑上开着收银台（它自己会跑同步服务，不用另外启动）；<br>'
+          +'② 手机和电脑连<b>同一个 WiFi</b>；<br>'
+          +'③ 手机登录的账号，和<b>电脑端登录的是同一个账号</b>（这是最容易踩的坑：'
+          +'两个不同账号各自有独立的数据，永远看不到对方）。</p>'
+          +'<p class="cfg-help">不知道地址？点下面的「扫描局域网」自动找；'
+          +'也可以看电脑端「我的 → 多端同步」，那里会显示「手机/其他电脑填」的地址。</p>')
+      +'<div class="row" style="gap:8px;flex-wrap:wrap;margin:6px 0 2px">'
+      +'<button class="ghost" onclick="syncSetBase()">保存地址并测试</button>'
+      +'<button class="ghost" onclick="syncScanLan(this)">扫描局域网</button>'
+      +'</div>'
       +'<div class="row">'
       +'<div class="field" style="flex:1"><label>手机号 / 邮箱</label>'
       +'<input id="syncAccount" autocomplete="username" autocapitalize="off" spellcheck="false"'
@@ -5215,6 +5369,7 @@ function renderSyncBox(){
       +'</details>'
       +(_syncErr?('<p class="cfg-help" style="color:var(--danger)">'+esc(_syncErr)+'</p>'):'');
   }
+  refreshSyncStat();   /* v1.7.2：异步补上「服务器 / 本机」数据量对比 */
 }
 /* 删除本机账号（忘记密码时的兜底：删掉重新注册，服务器数据与业务数据都不受影响） */
 function delLocalAcct(key){
