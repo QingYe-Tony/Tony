@@ -1232,7 +1232,7 @@ exports.main_handler = async (event) => {
       <p class="cfg-help">本机账号：<b>不需要服务器</b>。第一次直接输账号密码点「登录」就会自动建号；
         下次同一台设备直接登录即可。想让手机 / 多台电脑看到同一份数据，再展开下面的「多端同步」。</p>
       <details id="gateSyncDet" style="margin-top:10px">
-        <summary style="cursor:pointer;font-size:13px;color:var(--muted)">多端同步（可选 · 不填也能正常用）</summary>
+        <summary style="cursor:pointer;font-size:13px;color:var(--muted)">多端同步 · 手机要看到电脑记录需填一次电脑地址（填过后每次登录自动同步）</summary>
         <div id="gateSyncState" style="margin-top:8px"></div>
         <div class="field" id="gateBaseWrap"><label>同步服务器地址</label>
           <input id="gateBase" placeholder="http://192.168.1.5:8787" autocapitalize="off" spellcheck="false"></div>
@@ -1302,7 +1302,7 @@ exports.main_handler = async (event) => {
 <script>
 /* ============ 存储层 ============ */
 const KEY='pos_system_v1';
-const APP_VER='1.7.0';   // 全站唯一版本常量：导出/关于页/检查更新都用它（发版时只改这一处）
+const APP_VER='1.7.1';   // 全站唯一版本常量：导出/关于页/检查更新都用它（发版时只改这一处）
 const DEF_SMS_TPL={
   open:'【{店铺}】{姓名}您好，您的会员卡已开通，卡号{卡号}，本次消费{金额}元，获赠{积分}积分，当前积分{总积分}，账户余额{余额}元。感谢惠顾！',
   consume:'【{店铺}】{姓名}您好，本次消费{金额}元，获得{积分}积分，当前积分{总积分}，余额{余额}元。欢迎再次光临！',
@@ -2428,6 +2428,8 @@ function openLoginGate(){
   acctLoad();gateRecall();                       // 回填「记住的账号密码」
   const g=document.getElementById('loginGate');if(g)g.classList.remove('hidden');
   gateRenderState();
+  /* v1.7.1：还没同步地址时，自动展开「多端同步」让用户填一次（之后登录自动同步） */
+  try{const det=document.getElementById('gateSyncDet');if(det&&!String(SYNC.base||'').trim())det.open=true;}catch(e){}
   setTimeout(()=>{
     const el=gateVal('gateAcct')?document.getElementById('gatePass'):document.getElementById('gateAcct');
     if(el)el.focus();
@@ -2674,10 +2676,16 @@ function gateRecall(){
 }
 /* 后台把本机账号「绑定」到同步服务器（可选）：成功就开始多端同步，失败静默 */
 function gateSyncBind(acct,pass){
-  let base='';
-  try{base=String(gateResolveBase(true)||'').trim();}catch(e){base='';}
-  if(!base)return;                                   // 没配服务器：纯本机账号，什么都不做
   (async()=>{
+    let base='';
+    try{base=String(gateResolveBase(true)||'').trim();}catch(e){base='';}
+    /* v1.7.1：没填地址时先自动找电脑端（同 WiFi），找到就记下来，之后登录秒同步 */
+    if(!base){
+      try{toast('正在查找电脑端同步服务…');}catch(e){}
+      try{base=await syncDiscover();}catch(e){base='';}
+      if(base){SYNC.base=base;syncPersist();try{toast('已找到电脑端，正在同步…');}catch(e){}}
+    }
+    if(!base)return;                                 // 仍没找到：纯本机账号，不阻塞登录
     try{
       let d=null;
       try{d=await syncReq('POST','/api/login',{account:acct,password:pass});}
@@ -2689,7 +2697,7 @@ function gateSyncBind(acct,pass){
       }
       if(!d||!d.token)return;
       syncAdoptAuth(d,acct);
-      await syncNow({silent:true});
+      await syncNow({silent:false});                  // 登录即同步，并把结果提示出来
       renderSyncBox();
     }catch(e){/* 服务器不可达：保持本机登录，不影响使用 */}
   })();
@@ -4746,6 +4754,42 @@ function syncBaseDefault(){
   // 从内网地址打开的页面（例如手机连了店里的收银机），用同一个主机名 + 默认端口
   if(h&&isPrivateHost(h)&&!/^(localhost|127\.0\.0\.1)$/i.test(h))return 'http://'+h+':8787';
   return '';   // 公网域名或本地文件打开 → 不瞎猜，让用户自己填
+}
+/* v1.7.1：手机端「登录即同步」——自动寻找电脑端同步服务（同一 WiFi）。
+   ① 页面本身从内网地址打开 → 同主机:8787；
+   ② 否则轻扫几个常见网段的 .2~.30:8787（并发 + 超时，最多约 2.5s）。
+   找到即返回 base，找不到返回 ''（退回手填地址，不阻塞登录）。 */
+function _isPrivateIPv4(ip){
+  if(!/^\d{1,3}(\.\d{1,3}){3}$/.test(ip))return false;
+  const a=ip.split('.').map(Number);
+  if(a.some(n=>n<0||n>255))return false;
+  return a[0]===10||(a[0]===172&&a[1]>=16&&a[1]<=31)||(a[0]===192&&a[1]===168);
+}
+function _probeSync(base,timeout){
+  return new Promise(resolve=>{
+    let done=false;const ctl=(typeof AbortController!=='undefined')?new AbortController():null;
+    const fin=v=>{if(done)return;done=true;try{ctl&&ctl.abort();}catch(e){};resolve(v);};
+    const t=setTimeout(()=>fin(false),timeout||700);
+    try{
+      fetch(String(base).replace(/\/+$/,'')+'/api/me',{method:'GET',cache:'no-store',...(ctl?{signal:ctl.signal}:{})})
+        .then(r=>{clearTimeout(t);fin(r.status===200||r.status===401);})
+        .catch(()=>{clearTimeout(t);fin(false);});
+    }catch(e){clearTimeout(t);fin(false);}
+  });
+}
+async function syncDiscover(){
+  if(SYNC.base)return SYNC.base;
+  try{
+    const h=String((location&&location.hostname)||'');
+    if(_isPrivateIPv4(h)){const b='http://'+h+':8787';if(await _probeSync(b,900))return b;}
+  }catch(e){}
+  const cands=[];
+  ['192.168.1','192.168.0','192.168.31','10.0.0'].forEach(s=>{for(let i=2;i<=30;i++)cands.push('http://'+s+'.'+i+':8787');});
+  let idx=0,found='';
+  async function worker(){while(!found&&idx<cands.length){const b=cands[idx++];if(await _probeSync(b,600)){found=b;return;}}}
+  const ws=[];for(let i=0;i<20;i++)ws.push(worker());
+  await Promise.all(ws);
+  return found;
 }
 function syncLoad(){
   try{const r=localStorage.getItem(SYNC_KEY);if(r)SYNC=Object.assign({},SYNC_DEF,JSON.parse(r));}catch(e){}
